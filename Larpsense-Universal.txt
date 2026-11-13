@@ -1,0 +1,1683 @@
+-- Larpsense universal visuals and Spotify overlay with the Vitality library.
+local LIBRARY_URL = "https://raw.githubusercontent.com/cueshut/vitremake/35bd0e1717e0cba52eb03464470ebf0a385fd04c/vitality.lua"
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local CoreGui = game:GetService("CoreGui")
+local requestFn = (syn and syn.request) or request or http_request
+
+if type(getgenv) ~= "function" or type(loadstring) ~= "function" or
+    type(isfolder) ~= "function" or type(makefolder) ~= "function" or type(listfiles) ~= "function" then
+    warn("Spotify: Vitality requires an executor with getgenv, loadstring and filesystem support.")
+    return
+end
+local env = getgenv()
+if type(env.SpotifyOverlayCleanup) == "function" then pcall(env.SpotifyOverlayCleanup) end
+local parent = (type(gethui) == "function" and gethui()) or CoreGui
+local old = parent:FindFirstChild("SpotifyLocalOverlay")
+if old then old:Destroy() end
+-- The pinned library's title editor treats its title container as a TextLabel.
+local function fixLibraryTitle(source)
+    local broken = 'SettingsPage.Window.Items["ActualTitle"].Instance.Text = Value'
+    local first, last = source:find(broken, 1, true)
+    if first then
+        local replacement = [[local container = SettingsPage.Window.Items["ActualTitle"].Instance
+                        if container:IsA("TextLabel") then container.Text = Value else
+                            local assigned = false
+                            for _, child in ipairs(container:GetChildren()) do
+                                if child:IsA("TextLabel") then
+                                    child.Text = assigned and "" or Value
+                                    assigned = true
+                                end
+                            end
+                        end]]
+        source = source:sub(1, first - 1) .. replacement .. source:sub(last + 1)
+    end
+    return source
+end
+local ok, Library = pcall(function() return loadstring(fixLibraryTitle(game:HttpGet(LIBRARY_URL)))() end)
+if not ok or type(Library) ~= "table" then
+    warn("Spotify: could not load the Vitality UI library. Check internet access and executor support.")
+    return
+end
+
+Library.Theme["Background"] = Color3.fromRGB(10, 9, 13)
+Library.Theme["Inline"] = Color3.fromRGB(18, 15, 24)
+Library.Theme["Content"] = Color3.fromRGB(12, 10, 17)
+Library.Theme["Section Box"] = Color3.fromRGB(8, 7, 11)
+Library.Theme["Text"] = Color3.fromRGB(188, 178, 178)
+Library.Theme["Inactive Text"] = Color3.fromRGB(120, 110, 110)
+Library.Theme["Accent"] = Color3.fromRGB(169, 105, 245)
+-- Register the default palette so the library's Settings page keeps it selected.
+local larpsenseTheme = {}
+for key, color in pairs(Library.Theme) do larpsenseTheme[key] = color end
+Library.Presets["larpsense"] = larpsenseTheme
+table.insert(Library.PresetOrder, 1, "larpsense")
+Library.CurrentTheme = "larpsense"
+local Window = Library:Window({Name = "larpsense"})
+local logoFrame = Window.Items["Icon"].Instance
+for _, child in ipairs(logoFrame:GetChildren()) do child:Destroy() end
+logoFrame.Visible = true
+local logoImage = Instance.new("ImageLabel")
+logoImage.Name, logoImage.BackgroundTransparency, logoImage.Size = "LarpsenseLogo", 1, UDim2.fromScale(1, 1)
+logoImage.Parent = logoFrame
+local logoAsset = getcustomasset or getsynasset
+local logoLoaded = false
+if type(writefile) == "function" and type(logoAsset) == "function" then
+    logoLoaded = pcall(function()
+        local path = "Vitality/Assets/larpsense-logo.png"
+        writefile(path, "\137\080\078\071\013\010\026\010\000\000\000\013\073\072\068\082\000\000\000\038\000\000\000\053\008\002\000\000\000\162\029\014\204\000\000\003\029\073\068\065\084\120\001\236\151\079\104\211\080\028\199\095\210\180\073\255\217\110\224\060\204\077\119\145\065\047\243\223\196\057\153\160\206\009\178\219\252\195\068\068\138\067\004\231\105\157\032\027\211\203\080\240\176\137\030\214\195\220\156\136\135\029\028\008\142\010\050\015\133\082\015\042\136\135\013\198\100\030\100\108\235\191\180\073\155\062\127\171\082\186\054\047\109\210\032\130\249\241\075\072\126\191\223\251\125\222\251\246\037\161\052\250\235\102\032\011\037\167\016\002\071\004\083\072\149\142\168\084\088\140\016\120\233\120\013\145\074\145\202\173\085\205\070\031\164\242\132\138\178\255\012\018\182\003\120\209\236\244\186\149\095\037\252\054\224\202\012\138\034\206\138\152\200\117\148\071\230\082\101\078\024\019\103\069\076\228\090\106\071\230\134\107\057\025\072\045\170\085\048\134\040\172\223\239\135\013\018\008\004\148\155\152\041\174\141\189\238\115\125\025\173\137\140\184\087\047\218\253\046\186\094\121\008\017\169\060\236\119\150\163\118\244\218\167\187\109\015\107\232\070\136\176\148\163\197\210\115\211\249\174\145\105\133\091\146\087\133\220\111\185\208\108\238\092\147\022\199\162\199\007\055\220\247\054\155\130\130\223\065\215\093\113\188\104\096\014\234\143\100\016\183\207\124\074\066\226\235\164\239\135\244\025\190\052\060\094\159\227\007\230\147\247\005\028\147\112\026\017\076\251\042\105\202\100\161\108\034\230\019\217\181\124\243\044\146\022\082\099\143\034\173\185\073\228\195\219\046\180\035\001\182\145\093\177\082\238\070\230\112\097\075\160\074\136\184\068\168\212\142\004\037\195\194\076\010\199\078\090\125\123\152\035\208\171\066\175\006\137\150\051\193\057\222\199\034\199\053\199\108\027\219\071\035\083\037\212\170\144\176\208\143\226\204\100\252\188\128\099\221\182\007\189\142\041\039\189\171\044\181\074\228\086\255\165\204\194\211\088\231\247\076\216\099\062\119\195\057\191\219\116\096\043\074\062\116\064\066\115\216\071\019\241\238\176\248\220\077\055\092\117\190\106\032\063\148\080\172\015\018\026\137\056\049\155\184\005\015\165\141\170\237\177\061\001\054\004\101\093\055\036\116\207\034\233\067\234\113\088\152\174\051\053\031\098\047\067\068\214\245\068\002\064\066\233\144\240\044\137\035\077\076\155\133\178\067\164\212\181\035\097\041\103\172\067\102\138\043\106\042\162\068\006\039\139\130\133\183\026\145\064\234\178\014\117\112\183\143\178\125\104\251\095\135\038\230\152\157\222\009\027\074\196\060\146\051\141\200\052\078\005\146\163\060\094\063\205\221\233\224\250\097\006\208\156\070\166\022\075\079\151\117\088\196\060\188\152\224\169\069\114\086\006\217\222\222\030\045\177\080\040\004\173\224\197\253\050\238\021\080\252\172\117\228\174\107\105\192\245\105\216\189\002\159\104\006\177\111\147\035\203\153\032\212\200\122\025\036\203\178\206\018\179\219\255\236\139\197\204\251\241\104\071\072\152\148\144\088\075\239\005\192\215\244\155\241\216\137\160\048\065\090\034\212\208\112\200\186\215\235\165\008\230\241\120\242\067\034\217\213\089\190\031\062\206\131\027\174\225\205\250\169\248\165\159\210\183\124\086\246\130\136\148\173\038\006\213\036\012\164\026\181\084\212\026\194\170\016\075\077\169\033\172\026\181\084\212\026\194\170\016\075\077\169\033\172\026\181\084\212\254\031\194\254\002\000\000\255\255\124\238\118\217\000\000\000\006\073\068\065\084\003\000\223\119\254\107\201\180\200\151\000\000\000\000\073\069\078\068\174\066\096\130")
+        logoImage.Image = logoAsset(path)
+    end)
+end
+if not logoLoaded then
+    logoImage:Destroy()
+    local fallback = Instance.new("TextLabel")
+    fallback.Name, fallback.Text, fallback.Size = "LarpsenseLogoText", "LS", UDim2.fromScale(1, 1)
+    fallback.Font, fallback.TextSize, fallback.TextColor3 = Enum.Font.Code, 12, Library.Theme["Accent"]
+    fallback.BackgroundTransparency, fallback.Parent = 1, logoFrame
+end
+local settings = {hud = true, lyrics = true, lyricMode = "Line", liveListen = false, waves = true, progress = true, offset = 0,
+    gain = 2.2, shaders = false, bloom = 0.7, contrast = 0.12, saturation = 0.15, rays = 0.05, preset = "Purple dusk", dof = false,
+    world = false, worldPreset = "Violet night", haze = 0.25, stars = 3000,
+    morphTarget = "", morphOffset = 0, outline = false, trail = false, wind = false, aura = false, windRate = 16,
+    sky = false, skyDistance = 35, skyHeight = 18, skySize = 24, fade = 0.4,
+    skyColor = Color3.fromRGB(235, 228, 228)}
+local alive, connections = true, {}
+local data, receivedAt, offline = nil, 0, "Bridge offline"
+-- Each execution owns an expiring local listener lease. No audio is sent by this script.
+local guidOK,guid=pcall(function() return HttpService:GenerateGUID(false) end)
+local liveOwner=guidOK and type(guid)=="string" and guid:gsub("[^%w_-]","") or ""
+if #liveOwner<8 then liveOwner=string.format("live_%d_%d",math.floor(os.clock()*1000000),math.random(100000,999999)) end
+local liveDesired,liveRegistered,liveSyncing,liveRetryAt=false,false,false,0
+local liveData,liveReceivedAt,liveStatus,liveTrackKey=nil,0,"off",""
+local function currentTrackKey()
+    return data and data.token_ok and (tostring(data.song or "").."\0"..tostring(data.artist or "").."\0"..tostring(data.album or "")) or ""
+end
+local function syncListener()
+    if liveSyncing or liveDesired==liveRegistered then return end
+    if type(requestFn)~="function" then liveStatus="executor HTTP unavailable"; return end
+    liveSyncing=true
+    task.spawn(function()
+        while liveDesired~=liveRegistered do
+            local target=liveDesired
+            local ok,response=pcall(function()
+                return requestFn({Url="http://127.0.0.1:8787/live-lyrics",Method="POST",
+                    Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode({client=liveOwner,enabled=target})})
+            end)
+            local decoded,result=false,nil
+            if ok and type(response)=="table" then decoded,result=pcall(function() return HttpService:JSONDecode(response.Body or response.body) end) end
+            local code=ok and type(response)=="table" and (response.StatusCode or response.status_code)
+            if not decoded or type(result)~="table" or not result.ok or (code and code~=200) then
+                liveStatus=target and "live bridge unavailable" or "off"
+                liveRetryAt=os.clock()+5
+                break
+            end
+            liveRegistered=target
+            liveStatus=target and "starting" or "off"
+        end
+        liveSyncing=false
+    end)
+end
+local function setLiveListening(enabled)
+    liveDesired=enabled and alive or false
+    if not liveDesired then liveData=nil; liveTrackKey=""; liveStatus="off" end
+    syncListener()
+end
+local spectrum, spectrumAvailable = {}, false
+local controlPending, controlMessage, controlMessageUntil = false, "", 0
+local function connect(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(connections, connection)
+    return connection
+end
+local function frame(parentObject, name, size, position, color)
+    local object = Instance.new("Frame")
+    object.Name, object.Size, object.Position = name, size, position
+    object.BackgroundColor3, object.BorderSizePixel, object.Parent = color, 0, parentObject
+    return object
+end
+local function label(parentObject, name, value, size, position, textSize, color)
+    local object = Instance.new("TextLabel")
+    object.Name, object.Text, object.Size, object.Position = name, value, size, position
+    object.BackgroundTransparency, object.BorderSizePixel = 1, 0
+    object.Font, object.TextSize, object.TextColor3 = Enum.Font.Code, textSize, color
+    object.TextXAlignment, object.TextYAlignment = Enum.TextXAlignment.Left, Enum.TextYAlignment.Center
+    object.TextTruncate, object.Parent = Enum.TextTruncate.AtEnd, parentObject
+    return object
+end
+local function button(parentObject, name, value, position, width)
+    local object = Instance.new("TextButton")
+    object.Name, object.Text, object.Size, object.Position = name, value, UDim2.fromOffset(width, 18), position
+    object.BackgroundColor3, object.BorderSizePixel = Color3.fromRGB(18, 15, 24), 0
+    object.TextColor3, object.Font, object.TextSize, object.AutoButtonColor = Color3.fromRGB(188, 178, 178), Enum.Font.Code, 10, false
+    object.Parent = parentObject
+    return object
+end
+local function outline(object, color)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color, stroke.Thickness, stroke.Parent = color, 1, object
+end
+local dark, panel = Color3.fromRGB(8, 7, 11), Color3.fromRGB(18, 15, 24)
+local dim, textColor = Color3.fromRGB(120, 110, 110), Color3.fromRGB(188, 178, 178)
+-- This HUD belongs to the library's ScreenGui, but stays visible when its menu is hidden.
+local hud = frame(Library.Holder.Instance, "SpotifyMusicHUD", UDim2.fromOffset(236, 134), UDim2.new(0.5, -118, 1, -154), dark)
+outline(hud, Color3.fromRGB(56, 50, 51))
+local header = frame(hud, "Header", UDim2.new(1, 0, 0, 22), UDim2.fromOffset(0, 0), panel)
+header.Active = true
+local heading = label(header, "Heading", "Music", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), 11, textColor)
+heading.TextXAlignment = Enum.TextXAlignment.Center
+local accentLine = frame(header, "Accent", UDim2.new(1, 0, 0, 1), UDim2.new(0, 0, 1, -1), Library.Theme["Accent"])
+local artwork = frame(hud, "ArtworkPlaceholder", UDim2.fromOffset(36, 36), UDim2.fromOffset(8, 29), panel)
+outline(artwork, Color3.fromRGB(56, 50, 51))
+local artworkImage = Instance.new("ImageLabel")
+artworkImage.Name, artworkImage.Size, artworkImage.BackgroundTransparency = "AlbumCover", UDim2.fromScale(1, 1), 1
+artworkImage.Visible, artworkImage.Parent = false, artwork
+local title = label(hud, "Track", "Waiting for Spotify", UDim2.fromOffset(178, 16), UDim2.fromOffset(50, 27), 11, textColor)
+local artistLabel = label(hud, "Artist", "Start the local bridge", UDim2.fromOffset(178, 14), UDim2.fromOffset(50, 42), 10, dim)
+local waveform = frame(hud, "Visualizer", UDim2.fromOffset(176, 28), UDim2.fromOffset(50, 55), dark)
+local bars, displayedBands = {}, {}
+for i = 1, 24 do
+    local bar = frame(waveform, "Band" .. i, UDim2.fromOffset(5, 2), UDim2.fromOffset((i - 1) * 7, 20), Library.Theme["Accent"])
+    bars[i], displayedBands[i] = bar, 0
+end
+local timeLabel = label(hud, "Time", "--:-- / --:--", UDim2.fromOffset(86, 14), UDim2.fromOffset(8, 84), 9, dim)
+local playButton = button(hud, "PlayPause", "PLAY", UDim2.fromOffset(150, 83), 38)
+local nextButton = button(hud, "Next", "NEXT", UDim2.fromOffset(194, 83), 34)
+local hudStatus = label(hud, "Status", "Bridge offline", UDim2.fromOffset(220, 24), UDim2.fromOffset(8, 104), 9, dim)
+hudStatus.TextWrapped, hudStatus.TextTruncate = true, Enum.TextTruncate.None
+local progressTrack = frame(hud, "ProgressTrack", UDim2.new(1, 0, 0, 2), UDim2.new(0, 0, 1, -2), Color3.fromRGB(56, 50, 51))
+local progressFill = frame(progressTrack, "ProgressFill", UDim2.fromScale(0, 1), UDim2.fromOffset(0, 0), Library.Theme["Accent"])
+
+local dragging, dragStart, startPosition = false, nil, nil
+connect(header.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging, dragStart, startPosition = true, input.Position, hud.Position
+    end
+end)
+connect(UserInputService.InputChanged, function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        hud.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X, startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end
+end)
+connect(UserInputService.InputEnded, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
+end)
+
+-- Each lyric anchors near the character once, then stays in the world until the next line.
+local skyPart = Instance.new("Part")
+skyPart.Name, skyPart.Transparency, skyPart.Anchored = "SpotifySkyLyrics", 1, true
+skyPart.CanCollide, skyPart.CanTouch, skyPart.CanQuery = false, false, false
+skyPart.Size, skyPart.Parent = Vector3.new(1, 1, 1), workspace
+local skyGui = Instance.new("BillboardGui")
+skyGui.Name, skyGui.Adornee, skyGui.AlwaysOnTop = "Lyrics", skyPart, true
+skyGui.Size, skyGui.Enabled, skyGui.Parent = UDim2.fromOffset(700, 90), false, skyPart
+local skyOld = label(skyGui, "OldLyric", "", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), 24, settings.skyColor)
+local skyNew = label(skyGui, "CurrentLyric", "", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), 24, settings.skyColor)
+for _, item in ipairs({skyOld, skyNew}) do
+    item.TextXAlignment, item.TextWrapped = Enum.TextXAlignment.Center, true
+    item.TextTruncate, item.TextTransparency, item.TextStrokeTransparency = Enum.TextTruncate.None, 1, 1
+    item.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+end
+skyGui.MaxDistance = 600
+local skyLine, skyTransition, previousSkyLine = "", 0, ""
+local skyOrigin, skyDirection, skyRoot = nil, nil, nil
+local skyAnchorKey = ""
+local effects = {}
+for name, class in pairs({Bloom = "BloomEffect", Grade = "ColorCorrectionEffect", Rays = "SunRaysEffect", Focus = "DepthOfFieldEffect"}) do
+    local effect = Instance.new(class)
+    effect.Name, effect.Enabled, effect.Parent = "Larpsense" .. name, false, Lighting
+    effects[name] = effect
+end
+local function applyVisuals()
+    for _, effect in pairs(effects) do effect.Enabled = settings.shaders end
+    effects.Bloom.Intensity, effects.Bloom.Size, effects.Bloom.Threshold = settings.bloom, 36, 0.85
+    effects.Grade.Contrast, effects.Grade.Saturation = settings.contrast, settings.saturation
+    effects.Grade.TintColor = settings.preset == "Purple dusk" and Color3.fromRGB(218, 195, 255) or
+        (settings.preset == "Warm cinema" and Color3.fromRGB(255, 224, 194) or Color3.fromRGB(255, 255, 255))
+    effects.Rays.Intensity, effects.Rays.Spread = settings.rays, 0.75
+    effects.Focus.Enabled = settings.shaders and settings.dof
+    effects.Focus.FocusDistance, effects.Focus.InFocusRadius = 45, 35
+    effects.Focus.FarIntensity, effects.Focus.NearIntensity = 0.16, 0.04
+end
+
+
+-- Own the override instances and put the game's original environment back on disable.
+local worldSky = Instance.new("Sky")
+worldSky.Name = "LarpsenseSky"
+for face, suffix in pairs({Bk = "bk", Dn = "dn", Ft = "ft", Lf = "lf", Rt = "rt", Up = "up"}) do
+    worldSky["Skybox" .. face] = "rbxasset://textures/sky/sky512_" .. suffix .. ".tex"
+end
+local worldAir = Instance.new("Atmosphere")
+worldAir.Name = "LarpsenseAtmosphere"
+local savedEnvironment, savedClock, imposedClock = {}, nil, nil
+local worldPresets = {
+    ["Violet night"] = {time = 0, color = Color3.fromRGB(153, 128, 215), decay = Color3.fromRGB(49, 32, 84)},
+    ["Blue hour"] = {time = 5.5, color = Color3.fromRGB(141, 180, 235), decay = Color3.fromRGB(43, 66, 110)},
+    ["Golden sunset"] = {time = 17.8, color = Color3.fromRGB(255, 203, 151), decay = Color3.fromRGB(124, 64, 84)},
+    ["Clear day"] = {time = 14, color = Color3.fromRGB(200, 222, 255), decay = Color3.fromRGB(120, 150, 185)}
+}
+local function parkEnvironment(object)
+    if object ~= worldSky and object ~= worldAir and (object:IsA("Sky") or object:IsA("Atmosphere")) then
+        savedEnvironment[object] = true
+        object.Parent = nil
+    end
+end
+local function restoreWorld()
+    worldSky.Parent, worldAir.Parent = nil, nil
+    for object in pairs(savedEnvironment) do
+        pcall(function() if object.Parent == nil then object.Parent = Lighting end end)
+    end
+    savedEnvironment = {}
+    if savedClock ~= nil and Lighting.ClockTime == imposedClock then Lighting.ClockTime = savedClock end
+    savedClock, imposedClock = nil, nil
+end
+local function applyWorld()
+    if not settings.world then restoreWorld(); return end
+    if savedClock == nil then savedClock = Lighting.ClockTime end
+    for _, object in ipairs(Lighting:GetChildren()) do parkEnvironment(object) end
+    local preset = worldPresets[settings.worldPreset] or worldPresets["Violet night"]
+    worldSky.StarCount, worldSky.CelestialBodiesShown = settings.stars, true
+    worldAir.Color, worldAir.Decay = preset.color, preset.decay
+    worldAir.Density, worldAir.Haze, worldAir.Glare = settings.haze, 1.4, 0.15
+    imposedClock = preset.time
+    Lighting.ClockTime = imposedClock
+    worldSky.Parent, worldAir.Parent = Lighting, Lighting
+end
+connect(Lighting.ChildAdded, function(object) if settings.world then parkEnvironment(object) end end)
+
+-- A local cosmetic rig follows the real character, preserving movement and camera behavior.
+local morph = {ticket = 0, model = nil, root = nil, anchor = nil, hidden = {}, parts = {}, connections = {}, pose = nil, poseDirty = false, unsafe = false, vertical = 0, direction = Vector3.new(0,0,-1)}
+local MorphStatus, CollisionStatus
+local function morphStatus(message) if alive and MorphStatus then MorphStatus:SetText(message) end end
+local function clearMorph()
+    morph.ticket = morph.ticket + 1
+    for _, connection in ipairs(morph.connections) do connection:Disconnect() end
+    morph.connections = {}
+    if morph.model then morph.model:Destroy() end
+    if morph.anchor then morph.anchor:Destroy() end
+    morph.model, morph.root, morph.anchor, morph.pose, morph.poseDirty, morph.unsafe, morph.vertical = nil, nil, nil, nil, false, false, 0
+    morph.parts = {}
+    for object, saved in pairs(morph.hidden) do
+        pcall(function() if object[saved.property] == 1 then object[saved.property] = saved.value end end)
+    end
+    morph.hidden = {}
+    if CollisionStatus and alive then CollisionStatus:SetText("Preset collisions: inactive") end
+end
+local function checkMorphCollisions()
+    if not CollisionStatus or not alive then return end
+    if not morph.model then CollisionStatus:SetText("Preset collisions: inactive"); return end
+    local total,solid,loose=0,0,0
+    local ok=pcall(function()
+        for _,part in ipairs(morph.model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                total=total+1
+                if part.CanCollide then solid=solid+1 end
+                if not part.Anchored then loose=loose+1 end
+            end
+        end
+    end)
+    CollisionStatus:SetText(ok and string.format("Parts %d | solid %d | loose %d",total,solid,loose) or "Cannot inspect preset parts")
+end
+-- Enforce the ghost state before physics and whenever a new cosmetic part appears.
+local function setGhostPart(part)
+    local ok,valid=pcall(function()
+        if part.CanCollide then part.CanCollide=false end
+        if part.CanTouch then part.CanTouch=false end
+        if part.CanQuery then part.CanQuery=false end
+        if not part.Anchored then part.Anchored=true end
+        if not part.Massless then part.Massless=true end
+        return not part.CanCollide and not part.CanTouch and not part.CanQuery and part.Anchored and part.Massless
+    end)
+    return ok and valid
+end
+local function stopUnsafeMorph()
+    clearMorph()
+    morphStatus("Morph stopped: collision settings unavailable")
+end
+local function enforceMorphParts()
+    local model=morph.model
+    if not model then return true end
+    if not model.Parent then clearMorph(); morphStatus("Morph removed"); return false end
+    for part in pairs(morph.parts) do
+        local ok,belongs=pcall(function() return part:IsDescendantOf(model) end)
+        if not ok or not belongs then morph.parts[part]=nil
+        elseif not setGhostPart(part) then stopUnsafeMorph(); return false end
+    end
+    return true
+end
+local function installPhysicsGuard(name)
+    local ok,signal=pcall(function() return RunService[name] end)
+    if not ok or not signal then return false end
+    return pcall(function() connect(signal,function() if alive then enforceMorphParts() end end) end)
+end
+local physicsGuardAvailable=installPhysicsGuard("PreSimulation") or installPhysicsGuard("Stepped")
+
+-- Keep the cosmetic rig upright even when the source root leans or spins.
+local function morphFrame(root)
+    local anchor = morph.anchor
+    local transform = anchor and anchor.WorldCFrame or root.CFrame
+    local position = (anchor and anchor.WorldPosition or root.Position) + Vector3.new(0,morph.vertical+settings.morphOffset,0)
+    local look = transform.LookVector
+    local flat = Vector3.new(look.X, 0, look.Z)
+    if flat.Magnitude > 0.001 then morph.direction = flat.Unit end
+    return CFrame.lookAt(position, position + morph.direction)
+end
+-- Fully anchored cosmetic parts are posed explicitly; no cloned assembly can push the player.
+local function groundDistance(model, root)
+    local humanoid=model:FindFirstChildOfClass("Humanoid")
+    if humanoid and type(humanoid.HipHeight)=="number" and root.Size then
+        local distance=root.Size.Y/2+humanoid.HipHeight
+        if humanoid.RigType==Enum.HumanoidRigType.R6 then
+            local leg=model:FindFirstChild("Left Leg") or model:FindFirstChild("Right Leg")
+            if leg and leg:IsA("BasePart") then distance=distance+leg.Size.Y end
+        end
+        if distance>0 and distance<25 then return distance end
+    end
+    local bottom
+    for _,name in ipairs({"LeftFoot","RightFoot","Left Leg","Right Leg"}) do
+        local foot=model:FindFirstChild(name)
+        if foot and foot:IsA("BasePart") then
+            local y=foot.Position.Y-foot.Size.Y/2
+            bottom=bottom and math.min(bottom,y) or y
+        end
+    end
+    return bottom and (root.Position.Y-bottom) or nil
+end
+local function buildMorphPose(model,cloneRoot,character)
+    local members,parts,edges,sources = {},{},{},{}
+    for _,object in ipairs(character:GetDescendants()) do
+        if object:IsA("Motor6D") and object.Parent then sources[object.Parent.Name.."/"..object.Name]=object end
+    end
+    for _,object in ipairs(model:GetDescendants()) do
+        if object:IsA("BasePart") then members[object]=true; table.insert(parts,object) end
+    end
+    for _,joint in ipairs(model:GetDescendants()) do
+        local a,b,kind
+        if joint:IsA("Motor6D") or joint:IsA("Weld") or joint:IsA("ManualWeld") then
+            a,b,kind=joint.Part0,joint.Part1,joint:IsA("Motor6D") and "motor" or "weld"
+        elseif joint:IsA("WeldConstraint") then a,b,kind=joint.Part0,joint.Part1,"rigid"
+        elseif joint:IsA("RigidConstraint") and joint.Attachment0 and joint.Attachment1 then
+            a,b,kind=joint.Attachment0.Parent,joint.Attachment1.Parent,"constraint"
+        end
+        if a and b and members[a] and members[b] and a~=b then
+            local edge={joint=joint,a=a,b=b,kind=kind}
+            if kind=="rigid" then edge.offset=a.CFrame:ToObjectSpace(b.CFrame)
+            elseif kind=="constraint" then edge.offset=joint.Attachment0.CFrame*joint.Attachment1.CFrame:Inverse()
+            elseif kind=="motor" and joint.Name~="Root" and joint.Name~="RootJoint" and joint.Parent then
+                edge.source=sources[joint.Parent.Name.."/"..joint.Name]
+            end
+            table.insert(edges,edge)
+        end
+    end
+    local known,ordered={[cloneRoot]=true},{}
+    local changed=true
+    while changed do
+        changed=false
+        for _,edge in ipairs(edges) do
+            if not edge.used and known[edge.a] ~= known[edge.b] then
+                edge.forward=not not known[edge.a]; edge.used=true
+                known[edge.forward and edge.b or edge.a]=true
+                table.insert(ordered,edge); changed=true
+            end
+        end
+    end
+    local detached={}
+    for _,part in ipairs(parts) do
+        if not known[part] then table.insert(detached,{part=part,offset=cloneRoot.CFrame:ToObjectSpace(part.CFrame)}) end
+    end
+    return {root=cloneRoot,edges=ordered,detached=detached}
+end
+local function applyMorphPose(pose, target)
+    pose.root.CFrame=target
+    for _,edge in ipairs(pose.edges) do
+        if edge.a.Parent and edge.b.Parent and edge.joint.Parent then
+            local relative=edge.offset
+            if not relative then
+                local transform=CFrame.new()
+                if edge.kind=="motor" and edge.source and edge.source.Parent then transform=edge.source.Transform end
+                relative=edge.joint.C0*transform*edge.joint.C1:Inverse()
+            end
+            if edge.forward then edge.b.CFrame=edge.a.CFrame*relative else edge.a.CFrame=edge.b.CFrame*relative:Inverse() end
+        end
+    end
+    for _,part in ipairs(pose.detached) do
+        if part.part.Parent then part.part.CFrame=target*part.offset end
+    end
+end
+local function loadMorph(outfitId)
+    clearMorph()
+    if not physicsGuardAvailable then morphStatus("Morph unavailable: physics guard missing"); return end
+    local ticket, target = morph.ticket, settings.morphTarget:match("^%s*(.-)%s*$")
+    if not outfitId and target == "" then morphStatus("Enter a username or user ID"); return end
+    morphStatus("Loading avatar...")
+    task.spawn(function()
+        local model, description
+        local success, failure = pcall(function()
+            local player = Players.LocalPlayer
+            local character = player and player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            assert(humanoid and root, "Character unavailable")
+            if outfitId then
+                description = Players:GetHumanoidDescriptionFromOutfitId(outfitId)
+            else
+                local userId = tonumber(target) or Players:GetUserIdFromNameAsync(target)
+                description = Players:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end
+            if not alive or morph.ticket ~= ticket then return end
+            -- Catalog body bundles are R15; custom avatars use the player's own rig.
+            model = Players:CreateHumanoidModelFromDescriptionAsync(description, outfitId and Enum.HumanoidRigType.R15 or humanoid.RigType)
+            if not alive or morph.ticket ~= ticket or player.Character ~= character then return end
+            local cloneHumanoid = model:FindFirstChildOfClass("Humanoid")
+            local cloneRoot = model:FindFirstChild("HumanoidRootPart")
+            assert(cloneHumanoid and cloneRoot, "Avatar unavailable")
+            model.Name, model.PrimaryPart = "LarpsenseAvatar", cloneRoot
+            local ownedModel = model
+            local function prepare(object)
+                if object:IsA("BasePart") then
+                    morph.parts[object]=true
+                    if not setGhostPart(object) then error("cosmetic collision settings unavailable") end
+                elseif object:IsA("Script") or object:IsA("LocalScript") then object:Destroy() end
+            end
+            for _, object in ipairs(model:GetDescendants()) do prepare(object) end
+            table.insert(morph.connections, ownedModel.DescendantAdded:Connect(function(object)
+                local safe=pcall(prepare,object)
+                if not safe then
+                    if morph.model==ownedModel then stopUnsafeMorph() else morph.unsafe=true end
+                    return
+                end
+                if morph.model == ownedModel then morph.poseDirty=true end
+            end))
+            if ownedModel.DescendantRemoving then
+                table.insert(morph.connections, ownedModel.DescendantRemoving:Connect(function(object)
+                    morph.parts[object]=nil
+                    if morph.model==ownedModel then morph.poseDirty=true end
+                end))
+            end
+            cloneHumanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+            cloneHumanoid.AutoRotate = false
+            -- Only the cosmetic humanoid is disabled; the real character is untouched.
+            pcall(function() cloneHumanoid.EvaluateStateMachine = false end)
+            pcall(function() cloneHumanoid:ChangeState(Enum.HumanoidStateType.Physics) end)
+            -- A local attachment tracks the real root without joining its physics assembly.
+            local anchor = Instance.new("Attachment")
+            anchor.Name, anchor.Parent = "LarpsenseMorphAnchor", root
+            morph.anchor = anchor
+            local realGround,cloneGround=groundDistance(character,root),groundDistance(model,cloneRoot)
+            morph.vertical=realGround and cloneGround and (cloneGround-realGround) or 0
+            model:PivotTo(morphFrame(root))
+            morph.pose=buildMorphPose(model,cloneRoot,character)
+            model.Parent = workspace
+            morph.model, morph.root = model, root
+            model = nil
+            assert(not morph.unsafe, "cosmetic collision settings unavailable")
+            local function hide(object)
+                if morph.hidden[object] then return end
+                local property
+                if object:IsA("BasePart") then property = "LocalTransparencyModifier"
+                elseif object:IsA("Decal") or object:IsA("Texture") then property = "Transparency" end
+                if property then
+                    morph.hidden[object] = {property=property, value=object[property]}
+                    object[property] = 1
+                end
+            end
+            for _, object in ipairs(character:GetDescendants()) do hide(object) end
+            table.insert(morph.connections, character.DescendantAdded:Connect(hide))
+            morphStatus("Avatar applied (local)")
+            checkMorphCollisions()
+        end)
+        if description then description:Destroy() end
+        if model then model:Destroy() end
+        if not success and alive and morph.ticket == ticket then
+            clearMorph()
+            if tostring(failure):find("cosmetic collision settings unavailable",1,true) then
+                morphStatus("Morph stopped: collision settings unavailable")
+            else morphStatus("Avatar unavailable — outfit or rig could not load") end
+        end
+    end)
+end
+local characterFx = {character = nil, root = nil}
+local function clearCharacterFx()
+    for _, name in ipairs({"highlight", "trail", "a", "b", "wind", "aura", "windAttachment"}) do
+        if characterFx[name] then characterFx[name]:Destroy(); characterFx[name] = nil end
+    end
+    characterFx.character, characterFx.root = nil, nil
+end
+local function updateCharacterFx(character, root, accent)
+    if characterFx.character ~= character or characterFx.root ~= root then
+        clearCharacterFx()
+        characterFx.character, characterFx.root = character, root
+    end
+    if not root then return end
+    if settings.outline and not characterFx.highlight then
+        local highlight = Instance.new("Highlight")
+        highlight.Name, highlight.FillTransparency, highlight.OutlineTransparency = "LarpsenseOutline", 1, 0.15
+        highlight.DepthMode, highlight.Parent = Enum.HighlightDepthMode.Occluded, workspace
+        characterFx.highlight = highlight
+    end
+    if characterFx.highlight then
+        characterFx.highlight.Enabled, characterFx.highlight.Adornee = settings.outline, morph.model or character
+        characterFx.highlight.OutlineColor = accent
+    end
+    if settings.trail and not characterFx.trail then
+        local a, b, trail = Instance.new("Attachment"), Instance.new("Attachment"), Instance.new("Trail")
+        a.Position, b.Position = Vector3.new(-0.7, -1, 0.4), Vector3.new(0.7, -1, 0.4)
+        a.Parent, b.Parent = root, root
+        trail.Name, trail.Attachment0, trail.Attachment1 = "LarpsenseTrail", a, b
+        trail.Lifetime, trail.FaceCamera, trail.LightEmission = 0.5, true, 0.6
+        trail.Transparency = NumberSequence.new(0.25, 1)
+        trail.Parent = root
+        characterFx.a, characterFx.b, characterFx.trail = a, b, trail
+    end
+    if characterFx.trail then characterFx.trail.Enabled, characterFx.trail.Color = settings.trail, ColorSequence.new(accent) end
+    if (settings.wind or settings.aura) and not characterFx.windAttachment then
+        local attachment = Instance.new("Attachment"); attachment.Name = "LarpsenseParticles"; attachment.Parent = root
+        characterFx.windAttachment = attachment
+        local wind = Instance.new("ParticleEmitter")
+        wind.Name, wind.Texture = "Wind", "rbxasset://textures/particles/sparkles_main.dds"
+        wind.Lifetime, wind.Speed = NumberRange.new(0.5,1.1), NumberRange.new(3,7)
+        wind.SpreadAngle, wind.Drag = Vector2.new(35,35), 1
+        wind.Size, wind.Transparency = NumberSequence.new(0.12,0), NumberSequence.new(0.4,1)
+        wind.Parent, characterFx.wind = attachment, wind
+        local aura = Instance.new("ParticleEmitter")
+        aura.Name, aura.Texture = "Aura", "rbxasset://textures/particles/sparkles_main.dds"
+        aura.Lifetime, aura.Speed = NumberRange.new(0.8,1.5), NumberRange.new(0.5,2)
+        aura.SpreadAngle, aura.LightEmission = Vector2.new(180,180), 0.8
+        aura.Size, aura.Transparency = NumberSequence.new(0.18,0), NumberSequence.new(0.2,1)
+        aura.Parent, characterFx.aura = attachment, aura
+    end
+    if characterFx.wind then
+        characterFx.wind.Enabled, characterFx.wind.Rate, characterFx.wind.Color = settings.wind, settings.windRate, ColorSequence.new(accent)
+        characterFx.aura.Enabled, characterFx.aura.Rate, characterFx.aura.Color = settings.aura, settings.windRate/2, ColorSequence.new(accent)
+    end
+end
+if Players.LocalPlayer then
+    connect(Players.LocalPlayer.CharacterAdded, function()
+        clearMorph(); clearCharacterFx(); skyOrigin = nil
+        morphStatus("Avatar reset on respawn")
+    end)
+end
+
+local Player = Window:Page({Name = "Music"})
+local Now = Player:Section({Name = "Now Playing", Side = 1})
+local Song = Now:Label({Name = "Track: Waiting for Spotify"})
+local Artist = Now:Label({Name = "Artist: —"})
+local Album = Now:Label({Name = "Album: —"})
+local Status = Now:Label({Name = "Status: Bridge offline"})
+local Progress = Now:Label({Name = "Progress: --:-- / --:--"})
+local Lyrics = Player:Section({Name = "Synced Lyrics", Side = 2})
+local Current = Lyrics:Label({Name = "Bridge offline"})
+local Next = Lyrics:Label({Name = ""})
+local LyricTiming = Lyrics:Label({Name = "Word timing: off"})
+local Display = Player:Section({Name = "Music HUD", Side = 1})
+Display:Toggle({Name = "Show music HUD", Flag = "spotify_hud", Default = true, Callback = function(value)
+    settings.hud, hud.Visible = value, value
+end})
+Display:Toggle({Name = "Synced lyrics", Flag = "spotify_lyrics", Default = true, Callback = function(value)
+    settings.lyrics = value
+    Current:SetVisibility(value)
+    Next:SetVisibility(value)
+    LyricTiming:SetVisibility(value)
+end})
+Display:Dropdown({Name = "Lyric display", Flag = "spotify_lyric_mode", Items = {"Line","Word","Word line"}, Default = "Line", Callback = function(value) settings.lyricMode=value end})
+Display:Toggle({Name = "Live word listening", Flag = "spotify_live", Default = false, Callback = function(value)
+    settings.liveListen=value
+    setLiveListening(value)
+end})
+Display:Toggle({Name = "Visualizer", Flag = "spotify_waves", Default = true, Callback = function(value)
+    settings.waves, waveform.Visible = value, value
+end})
+Display:Toggle({Name = "Progress", Flag = "spotify_progress", Default = true, Callback = function(value)
+    settings.progress, progressTrack.Visible = value, value
+    Progress:SetVisibility(value)
+end})
+Display:Label({Name = "Accent colour"}):Colorpicker({Flag = "spotify_accent", Default = Library.Theme["Accent"], Callback = function(color)
+    Library:ChangeTheme("Accent", color)
+end})
+local Sky = Player:Section({Name = "Sky Lyrics", Side = 2})
+Sky:Toggle({Name = "Show sky lyrics", Flag = "spotify_sky", Default = false, Callback = function(value)
+    settings.sky = value
+    skyOrigin = nil
+    if not value then skyGui.Enabled = false end
+end})
+Sky:Slider({Name = "Lyric offset", Flag = "spotify_lyric_offset", Min = -10, Max = 10, Default = 0, Decimals = 0.25, Suffix = "s", Callback = function(value) settings.offset = value end})
+Sky:Slider({Name = "Fade time", Flag = "spotify_sky_fade", Min = 0.1, Max = 2, Default = 0.4, Decimals = 0.1, Suffix = "s", Callback = function(value) settings.fade = value end})
+Sky:Slider({Name = "Height", Flag = "spotify_sky_height", Min = 0, Max = 100, Default = 18, Callback = function(value) settings.skyHeight = value end})
+Sky:Slider({Name = "Distance", Flag = "spotify_sky_distance", Min = 15, Max = 150, Default = 35, Callback = function(value) settings.skyDistance = value end})
+Sky:Slider({Name = "Text size", Flag = "spotify_sky_size", Min = 14, Max = 48, Default = 24, Callback = function(value) settings.skySize = value end})
+Sky:Label({Name = "Sky colour"}):Colorpicker({Flag = "spotify_sky_color", Default = settings.skyColor, Callback = function(color) settings.skyColor = color end})
+Sky:Button({Name = "Place sky lyrics here", Callback = function() skyOrigin = nil end})
+Display:Slider({Name = "Wave aggression", Flag = "spotify_wave_gain", Min = 0.5, Max = 5, Default = 2.2, Decimals = 0.1, Callback = function(value) settings.gain = value end})
+local Visuals = Window:Page({Name = "Visuals"})
+local Shaders = Visuals:Section({Name = "Shaders", Side = 1})
+Shaders:Toggle({Name = "Enable shaders", Flag = "gs_shaders", Default = false, Callback = function(value) settings.shaders = value; applyVisuals() end})
+Shaders:Dropdown({Name = "Colour grade", Flag = "gs_grade", Items = {"Purple dusk", "Warm cinema", "Clean"}, Default = "Purple dusk", Callback = function(value) settings.preset = value; applyVisuals() end})
+Shaders:Slider({Name = "Bloom", Flag = "gs_bloom", Min = 0, Max = 2, Default = 0.7, Decimals = 0.05, Callback = function(value) settings.bloom = value; applyVisuals() end})
+Shaders:Slider({Name = "Contrast", Flag = "gs_contrast", Min = -0.3, Max = 0.5, Default = 0.12, Decimals = 0.01, Callback = function(value) settings.contrast = value; applyVisuals() end})
+local Atmosphere = Visuals:Section({Name = "Atmosphere", Side = 2})
+Atmosphere:Slider({Name = "Saturation", Flag = "gs_saturation", Min = -1, Max = 1, Default = 0.15, Decimals = 0.05, Callback = function(value) settings.saturation = value; applyVisuals() end})
+Atmosphere:Slider({Name = "Sun rays", Flag = "gs_rays", Min = 0, Max = 0.25, Default = 0.05, Decimals = 0.01, Callback = function(value) settings.rays = value; applyVisuals() end})
+Atmosphere:Toggle({Name = "Depth of field", Flag = "gs_dof", Default = false, Callback = function(value) settings.dof = value; applyVisuals() end})
+local World = Visuals:Section({Name = "Skybox", Side = 1})
+World:Toggle({Name = "Override sky", Flag = "gs_world", Default = false, Callback = function(value) settings.world = value; applyWorld() end})
+World:Dropdown({Name = "Sky preset", Flag = "gs_sky_preset", Items = {"Violet night", "Blue hour", "Golden sunset", "Clear day"}, Default = "Violet night", Callback = function(value) settings.worldPreset = value; applyWorld() end})
+World:Slider({Name = "Atmosphere density", Flag = "gs_haze", Min = 0, Max = 0.6, Default = 0.25, Decimals = 0.01, Callback = function(value) settings.haze = value; applyWorld() end})
+World:Slider({Name = "Stars", Flag = "gs_stars", Min = 0, Max = 5000, Default = 3000, Callback = function(value) settings.stars = math.floor(value); applyWorld() end})
+local Avatar = Window:Page({Name = "Avatar"})
+local Morph = Avatar:Section({Name = "Local avatar", Side = 1})
+Morph:Textbox({Name = "Username or user ID", Flag = "gs_morph_target", Default = "", Finished = true, Placeholder = "Roblox username", Callback = function(value) settings.morphTarget = tostring(value) end})
+Morph:Button({Name = "Apply avatar", Callback = function() loadMorph() end})
+-- Outfit IDs are from the named public catalog bundles; asset availability can change.
+local presets = { ["Tung Tung Sahur"] = 6382087404368038, ["Gucci Morty"] = 6503982564924532, ["Female Verity"] = 5388415442537622,
+    ["Tralalero Tralala"] = 2985529014081294, ["Brr Brr Patapim"] = 2750534186577575 }
+local selectedPreset = "Tung Tung Sahur"
+Morph:Dropdown({Name = "Preset", Flag = "un_morph_preset", Items = {"Tung Tung Sahur", "Gucci Morty", "Female Verity", "Tralalero Tralala", "Brr Brr Patapim"}, Default = selectedPreset, Callback = function(value) selectedPreset = value end})
+Morph:Button({Name = "Apply preset", Callback = function() loadMorph(presets[selectedPreset]) end})
+Morph:Button({Name = "Restore avatar", Callback = function() clearMorph(); morphStatus("Original avatar restored") end})
+Morph:Slider({Name = "Morph height offset", Flag = "un_morph_height", Min = -10, Max = 10, Default = 0, Decimals = 0.25, Callback = function(value) settings.morphOffset=value end})
+MorphStatus = Morph:Label({Name = "Choose an avatar to morph into"})
+CollisionStatus = Morph:Label({Name = "Preset collisions: inactive"})
+Morph:Button({Name = "Check preset collisions", Callback = checkMorphCollisions})
+local Style = Avatar:Section({Name = "Character effects", Side = 2})
+Style:Toggle({Name = "Accent outline", Flag = "gs_outline", Default = false, Callback = function(value) settings.outline = value end})
+Style:Toggle({Name = "Movement trail", Flag = "gs_trail", Default = false, Callback = function(value) settings.trail = value end})
+Style:Toggle({Name = "Wind particles", Flag = "un_wind", Default = false, Callback = function(value) settings.wind = value end})
+Style:Toggle({Name = "Particle aura", Flag = "un_aura", Default = false, Callback = function(value) settings.aura = value end})
+Style:Slider({Name = "Particle intensity", Flag = "un_wind_rate", Min = 2, Max = 40, Default = 16, Callback = function(value) settings.windRate = value end})
+-- Universal player visuals: screen-space elements use Roblox GUI objects, not Drawing API.
+local function installUniversalEsp()
+    local options = {enabled=false, box=true, names=true, distance=true, health=true,
+        highlight=true, skeleton=false, tracer=false, teammates=false, rainbow=false, ping=false,
+        pulse=true, teamColor=false, healthNumber=false, healthGradient=true, nameMode="Display name", textSize=13,
+        font="Code", textOutline=true, textGap=2, tool=false, teamLabel=false, boxFill=false, tracerOrigin="Bottom",
+        boxThickness=1, lineThickness=1, highlightFill=0.45, throughWalls=true, healthFormat="Percent",
+        maxDistance=2000, updateRate=20, followSpeed=14, opacity=0.7, color=Color3.fromRGB(255,255,255)}
+    local chams = {standalone=false, fill=true, outline=true, colorMode="ESP colour", outlineColor=Color3.fromRGB(255,255,255),
+        linkOpacity=true, opacity=0.7, outlineStrength=1, pulseFill=true, pulseOutline=true, pulseSpeed=3, pulseDepth=0.12,
+        rainbowSpeed=0.12, rainbowOutlineOffset=false, distanceFade=false, fadeFloor=0.35,
+        useEspFilters=true, teammates=false, maxDistance=2000}
+    local me = Players.LocalPlayer
+    local gui = Instance.new("ScreenGui")
+    gui.Name, gui.IgnoreGuiInset, gui.ResetOnSpawn, gui.DisplayOrder = "LarpsenseESP", true, false, 20
+    gui.Parent = parent
+    -- Snap slots are shared by the preview and the actual ESP.
+    local defaults = {name="top-2", distance="bottom-2", health="left", ping="right-2", tool="bottom-2", team="top-2"}
+    local layout = {name="top-2", distance="bottom-2", health="left", ping="right-2", tool="bottom-2", team="top-2"}
+    local colors = {box=options.color, name=options.color, distance=options.color, ping=options.color,
+        detail=options.color, highlight=options.color, tool=options.color, team=options.color, health=Color3.fromRGB(60,205,95)}
+    local textOrder = {"name", "distance", "ping", "tool", "team"}
+    local function textEnabled(key)
+        return (key == "name" and options.names) or (key == "distance" and options.distance) or (key == "ping" and options.ping) or (key == "tool" and options.tool) or (key == "team" and options.teamLabel)
+    end
+    local function colorFor(key, plr)
+        if options.rainbow then return Color3.fromHSV((os.clock()*0.12)%1,0.65,1) end
+        if options.teamColor and plr and plr.Team and plr.TeamColor then return plr.TeamColor.Color end
+        return colors[key]
+    end
+    local function chamsColors(plr,hum)
+        if chams.colorMode=="ESP colour" then
+            local color=colorFor("highlight",plr); return color,color
+        elseif chams.colorMode=="Custom" then return colors.highlight,chams.outlineColor
+        elseif chams.colorMode=="Team" then
+            local team=plr and plr.Team and plr.TeamColor and plr.TeamColor.Color
+            return team or colors.highlight,team or chams.outlineColor
+        elseif chams.colorMode=="Health" then
+            local hp=hum and math.clamp(hum.Health/math.max(hum.MaxHealth or 100,1),0,1) or 1
+            local color=Color3.fromRGB(math.floor(255*(1-hp)),math.floor(220*hp),95)
+            return color,color
+        elseif chams.colorMode=="Rainbow" then
+            local hue=(os.clock()*chams.rainbowSpeed)%1
+            return Color3.fromHSV(hue,0.65,1),Color3.fromHSV((hue+(chams.rainbowOutlineOffset and 0.15 or 0))%1,0.65,1)
+        end
+        return colors.highlight,chams.outlineColor
+    end
+    local function chamsOpacity(distance,limit)
+        local base=chams.linkOpacity and options.opacity or chams.opacity
+        local fade=chams.distanceFade and (1-math.clamp((distance or 0)/math.max(limit or options.maxDistance,1),0,1)*(1-chams.fadeFloor)) or 1
+        return base*fade
+    end
+    local function chamsPulse()
+        return options.pulse and (0.5+0.5*math.sin(os.clock()*chams.pulseSpeed)) or 0
+    end
+    local function chamsTransparency(distance,limit)
+        local alpha,pulse=chamsOpacity(distance,limit),chamsPulse()
+        local fill=chams.fill and math.clamp(1-alpha*options.highlightFill+(chams.pulseFill and pulse*chams.pulseDepth or 0),0,1) or 1
+        local stroke=chams.outline and math.clamp(1-alpha*chams.outlineStrength+(chams.pulseOutline and pulse*chams.pulseDepth*1.25 or 0),0,1) or 1
+        return fill,stroke
+    end
+    local function textPosition(key,x,y,w,h,textWidth)
+        local side,slot = layout[key]:match("^(%a+)%-(%d)$")
+        slot=tonumber(slot)
+        local before,total=0,0
+        for _,other in ipairs(textOrder) do
+            if textEnabled(other) and layout[other] == layout[key] then
+                if other == key then before=total end
+                total=total+1
+            end
+        end
+        local gap = options.textGap + ((options.health and layout.health == side) and 5 or 0)
+        local line = math.max(18,options.textSize+3)
+        if side == "top" or side == "bottom" then
+            local xx = slot==1 and x or (slot==3 and x+w-textWidth or x+w/2-textWidth/2)
+            local align = slot==1 and Enum.TextXAlignment.Left or (slot==3 and Enum.TextXAlignment.Right or Enum.TextXAlignment.Center)
+            local yy = side=="top" and (y-18-gap-before*line) or (y+h+gap+before*line)
+            return xx,yy,align
+        end
+        local yy=slot==1 and (y+before*line) or (slot==3 and (y+h-18-before*line) or (y+h/2-9+(before-(total-1)/2)*line))
+        if side=="left" then return x-textWidth-gap,yy,Enum.TextXAlignment.Right end
+        return x+w+gap,yy,Enum.TextXAlignment.Left
+    end
+    local function healthGeometry(x,y,w,h)
+        local side=layout.health
+        if side == "top" then return x,y-6,w,3,true end
+        if side == "bottom" then return x,y+h+3,w,3,true end
+        if side == "right" then return x+w+3,y,3,h,false end
+        return x-6,y,3,h,false
+    end
+    local boxX,boxY,boxW,boxH = 70,100,120,180
+    local preview = frame(gui,"ESPPreview",UDim2.fromOffset(260,390),UDim2.new(1,-280,0.5,-195),dark)
+    preview.Visible, preview.ZIndex = false, 20
+    outline(preview,Color3.fromRGB(72,58,83))
+    local previewHeader = frame(preview,"PreviewHeader",UDim2.new(1,0,0,25),UDim2.fromOffset(0,0),panel)
+    previewHeader.Active, previewHeader.ZIndex = true, 21
+    local titlePreview = label(previewHeader,"Title","LARPSENSE  /  ESP EDITOR",UDim2.fromScale(1,1),UDim2.fromOffset(8,0),11,textColor)
+    titlePreview.ZIndex = 22
+    local viewport = Instance.new("ViewportFrame")
+    viewport.Name, viewport.Size, viewport.Position, viewport.BackgroundTransparency = "PreviewModel", UDim2.fromOffset(200,270), UDim2.fromOffset(30,54), 1
+    viewport.Ambient, viewport.LightColor, viewport.LightDirection, viewport.ZIndex = Color3.fromRGB(175,175,185), Color3.fromRGB(255,255,255), Vector3.new(-1,-1,-1), 21
+    viewport.Parent = preview
+    local worldModel = Instance.new("WorldModel"); worldModel.Parent = viewport
+    local viewCamera = Instance.new("Camera"); viewCamera.FieldOfView = 32
+    viewCamera.CFrame = CFrame.lookAt(Vector3.new(0,2.5,-8),Vector3.new(0,2,0))
+    viewCamera.Parent, viewport.CurrentCamera = viewport, viewCamera
+    local mannequin = {}
+    for _, piece in ipairs({
+        {"Head",Vector3.new(0,3.9,0),Vector3.new(1,1,1)}, {"Torso",Vector3.new(0,2.5,0),Vector3.new(1.7,2,0.8)},
+        {"Left Arm",Vector3.new(-1.15,2.5,0),Vector3.new(0.6,2,0.65)}, {"Right Arm",Vector3.new(1.15,2.5,0),Vector3.new(0.6,2,0.65)},
+        {"Left Leg",Vector3.new(-0.43,0.55,0),Vector3.new(0.75,1.9,0.75)}, {"Right Leg",Vector3.new(0.43,0.55,0),Vector3.new(0.75,1.9,0.75)}
+    }) do
+        local part = Instance.new("Part")
+        part.Name, part.Size, part.CFrame, part.Anchored, part.CanCollide = piece[1], piece[3], CFrame.new(piece[2]), true, false
+        part.Color, part.Material = Color3.fromRGB(134,125,143), Enum.Material.SmoothPlastic
+        part.Parent = worldModel
+        table.insert(mannequin,part)
+    end
+    local previewAvatar,previewCharacter,previewChoice,previewDropdown,previewCharacterConnection = nil,nil,"My avatar",nil,nil
+    local PreviewStatus
+    local function previewMessage(value) if PreviewStatus then PreviewStatus:SetText(value) end end
+    local function chosenPlayer()
+        if previewChoice=="My avatar" then return me end
+        if previewChoice=="Mannequin" then return nil end
+        for _,plr in ipairs(Players:GetPlayers()) do if "@"..plr.Name==previewChoice then return plr end end
+    end
+    local function showMannequin(status)
+        if previewAvatar then previewAvatar:Destroy(); previewAvatar=nil end
+        previewCharacter=nil
+        for _,part in ipairs(mannequin) do part.Transparency=0 end
+        viewCamera.CFrame=CFrame.lookAt(Vector3.new(0,2.5,-8),Vector3.new(0,2,0))
+        previewMessage(status or "MANNEQUIN")
+    end
+    local function refreshPreview(force)
+        if not alive then return end
+        if previewChoice=="Mannequin" then showMannequin(); return end
+        local selected=chosenPlayer()
+        local character=selected and selected.Character
+        if not character then showMannequin("PLAYER UNAVAILABLE  /  MANNEQUIN"); return end
+        if not force and character==previewCharacter and previewAvatar and previewAvatar.Parent then return end
+        local oldArchivable,clone=character.Archivable,nil
+        local ok=pcall(function() character.Archivable=true; clone=character:Clone() end)
+        pcall(function() character.Archivable=oldArchivable end)
+        if not ok or not clone then previewMessage(previewAvatar and "AVATAR  /  REFRESH FAILED" or "MANNEQUIN"); return end
+        local success=pcall(function()
+            for _,object in ipairs(clone:GetDescendants()) do
+                if object:IsA("Script") or object:IsA("LocalScript") or object:IsA("Tool") or object:IsA("Sound") or object:IsA("ParticleEmitter") or object:IsA("Highlight") then
+                    object:Destroy()
+                elseif object:IsA("BasePart") then
+                    object.Anchored,object.CanCollide,object.CanTouch,object.CanQuery,object.LocalTransparencyModifier=true,false,false,false,0
+                elseif object:IsA("Humanoid") then
+                    object.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None
+                    pcall(function() object.EvaluateStateMachine=false end)
+                end
+            end
+            local cloneRoot=clone:FindFirstChild("HumanoidRootPart")
+            if cloneRoot then clone.PrimaryPart=cloneRoot end
+            clone.Name="PreviewAvatar"
+            clone:PivotTo(CFrame.new(Vector3.new(0,2,0)))
+            clone.Parent=worldModel
+        end)
+        if not success then clone:Destroy(); previewMessage(previewAvatar and "AVATAR  /  REFRESH FAILED" or "MANNEQUIN"); return end
+        if previewAvatar then previewAvatar:Destroy() end
+        previewAvatar,previewCharacter=clone,character
+        for _,part in ipairs(mannequin) do part.Transparency=1 end
+        -- Face the front of the cloned avatar and fit unusually large bundles.
+        viewCamera.CFrame=CFrame.lookAt(Vector3.new(0,2.5,-8),Vector3.new(0,2,0))
+        pcall(function()
+            local center,size=clone:GetBoundingBox()
+            local distance=math.max(5,size.Y/(2*math.tan(math.rad(viewCamera.FieldOfView/2)))*1.1,size.X/(2*math.tan(math.rad(viewCamera.FieldOfView/2))*(200/270))*1.1)
+            viewCamera.CFrame=CFrame.lookAt(center.Position+Vector3.new(0,0,-distance),center.Position)
+        end)
+        previewMessage(selected==me and "YOUR AVATAR  /  LOCAL PREVIEW" or (selected.Name.."  /  LOCAL PREVIEW"))
+    end
+    local function selectPreview(value)
+        if not alive then return end
+        previewChoice=value
+        if previewCharacterConnection then previewCharacterConnection:Disconnect(); previewCharacterConnection=nil end
+        local selected=chosenPlayer()
+        if selected and selected.CharacterAdded then
+            previewCharacterConnection=connect(selected.CharacterAdded,function() if preview.Visible then refreshPreview(true) end end)
+        end
+        if preview.Visible then refreshPreview(true) end
+    end
+    local function previewChoices()
+        local values={"My avatar","Mannequin"}
+        for _,plr in ipairs(Players:GetPlayers()) do if plr~=me then table.insert(values,"@"..plr.Name) end end
+        return values
+    end
+    local function refreshChoices()
+        if not alive then return end
+        local values=previewChoices()
+        local exists=false
+        for _,value in ipairs(values) do if value==previewChoice then exists=true end end
+        if not exists then previewChoice="My avatar" end
+        if previewDropdown and previewDropdown.Refresh and previewDropdown.Set then
+            previewDropdown:Refresh(values); previewDropdown:Set(previewChoice)
+        else selectPreview(previewChoice) end
+    end
+    if Players.PlayerAdded then connect(Players.PlayerAdded,refreshChoices) end
+    connect(Players.PlayerRemoving,function(plr)
+        if previewChoice=="@"..plr.Name then previewChoice="My avatar" end
+        -- PlayerRemoving may fire before GetPlayers removes them; defer list refresh.
+        task.defer(refreshChoices)
+    end)
+    local sampleBox = frame(preview,"SampleBox",UDim2.fromOffset(boxW,boxH),UDim2.fromOffset(boxX,boxY),panel)
+    sampleBox.BackgroundTransparency, sampleBox.ZIndex = 1, 22
+    local sampleStroke = Instance.new("UIStroke"); sampleStroke.Name, sampleStroke.Thickness, sampleStroke.Parent = "PreviewStroke", 1, sampleBox
+    local sampleName = label(preview,"PreviewName","player",UDim2.fromOffset(180,18),UDim2.fromOffset(55,72),13,options.color)
+    local sampleDistance = label(preview,"PreviewDistance","125 studs",UDim2.fromOffset(90,18),UDim2.fromOffset(100,244),12,options.color)
+    local samplePing = label(preview,"PreviewPing","ping N/A",UDim2.fromOffset(90,18),UDim2.fromOffset(196,150),12,options.color)
+    local sampleTool = label(preview,"PreviewTool","tool",UDim2.fromOffset(90,18),UDim2.fromOffset(100,260),12,options.color)
+    local sampleTeam = label(preview,"PreviewTeam","team",UDim2.fromOffset(90,18),UDim2.fromOffset(100,52),12,options.color)
+    for _,item in ipairs({sampleName,sampleDistance,samplePing,sampleTool,sampleTeam}) do item.Size=UDim2.fromOffset(64,18) end
+    for _, item in ipairs({sampleName,sampleDistance,samplePing,sampleTool,sampleTeam}) do item.TextXAlignment, item.TextStrokeTransparency, item.Active, item.ZIndex = Enum.TextXAlignment.Center, 0.35, true, 23 end
+    local sampleHealth = frame(preview,"PreviewHealth",UDim2.fromOffset(14,150),UDim2.fromOffset(93,91),Color3.fromRGB(19,17,23))
+    sampleHealth.Active, sampleHealth.ZIndex, sampleHealth.BackgroundTransparency = true, 23, 1
+    local healthBack = frame(sampleHealth,"PreviewHealthTrack",UDim2.new(0,3,1,0),UDim2.fromOffset(5,0),Color3.fromRGB(19,17,23)); healthBack.ZIndex=23
+    local sampleFill = frame(healthBack,"PreviewFill",UDim2.fromScale(1,0.8),UDim2.fromScale(0,0.2),Color3.fromRGB(60,205,95)); sampleFill.ZIndex = 24
+    local sampleHealthText = label(preview,"PreviewHealthText","80%",UDim2.fromOffset(40,16),UDim2.fromOffset(0,0),10,colors.health); sampleHealthText.ZIndex=23
+    local function previewLine(name,x1,y1,x2,y2)
+        local line = frame(preview,name,UDim2.fromOffset(math.sqrt((x2-x1)^2+(y2-y1)^2),1),UDim2.fromOffset((x1+x2)/2,(y1+y2)/2),options.color)
+        line.AnchorPoint, line.Rotation, line.ZIndex = Vector2.new(0.5,0.5), math.deg((math.atan2 or math.atan)(y2-y1,x2-x1)), 22
+        return line
+    end
+    local previewBones = {}
+    for i, points in ipairs({{130,125,130,180},{130,148,100,180},{130,148,160,180},{130,180,110,245},{130,180,150,245}}) do
+        previewBones[i]=previewLine("PreviewBone"..i,points[1],points[2],points[3],points[4])
+    end
+    local previewTracer=previewLine("PreviewTracer",130,280,130,340)
+    local markers, snapPoints = {}, {}
+    for _,side in ipairs({"top","bottom","left","right"}) do
+        for index=1,3 do
+            local horizontal=side=="top" or side=="bottom"
+            local x = horizontal and (boxX+(index-1)*(boxW-20)/2) or (side=="left" and boxX-3 or boxX+boxW)
+            local y = horizontal and (side=="top" and boxY-3 or boxY+boxH) or (boxY+(index-1)*(boxH-20)/2)
+            local key=side.."-"..index
+            snapPoints[key]={x=horizontal and (x+10) or x+1.5,y=horizontal and y+1.5 or y+10}
+            local marker=frame(preview,"Snap"..side..index,UDim2.fromOffset(horizontal and 20 or 3,horizontal and 3 or 20),UDim2.fromOffset(x,y),Library.Theme["Accent"])
+            marker.Visible,marker.ZIndex=false,24
+            markers[key]=marker
+        end
+    end
+    local previewAccent=frame(previewHeader,"Accent",UDim2.new(1,0,0,1),UDim2.new(0,0,1,-1),Library.Theme["Accent"]); previewAccent.ZIndex=22
+    local previewDrag
+    local function syncPreview()
+        local nx,ny,na=textPosition("name",boxX,boxY,boxW,boxH,64)
+        local dx,dy,da=textPosition("distance",boxX,boxY,boxW,boxH,64)
+        local px,py,pa=textPosition("ping",boxX,boxY,boxW,boxH,64)
+        local tx,ty,ta=textPosition("tool",boxX,boxY,boxW,boxH,64)
+        local qx,qy,qa=textPosition("team",boxX,boxY,boxW,boxH,64)
+        sampleName.Position,sampleDistance.Position,samplePing.Position,sampleTool.Position,sampleTeam.Position = UDim2.fromOffset(nx,ny),UDim2.fromOffset(dx,dy),UDim2.fromOffset(px,py),UDim2.fromOffset(tx,ty),UDim2.fromOffset(qx,qy)
+        sampleName.TextXAlignment,sampleDistance.TextXAlignment,samplePing.TextXAlignment,sampleTool.TextXAlignment,sampleTeam.TextXAlignment=na,da,pa,ta,qa
+        local hx,hy,hw,hh,horizontal=healthGeometry(boxX,boxY,boxW,boxH)
+        if horizontal then
+            sampleHealth.Position, sampleHealth.Size=UDim2.fromOffset(hx,hy-5),UDim2.fromOffset(hw,14)
+            healthBack.Position, healthBack.Size=UDim2.fromOffset(0,5),UDim2.fromOffset(hw,3)
+            sampleFill.Position, sampleFill.Size=UDim2.fromScale(0,0),UDim2.fromScale(0.8,1)
+        else
+            sampleHealth.Position, sampleHealth.Size=UDim2.fromOffset(hx-5,hy),UDim2.fromOffset(14,hh)
+            healthBack.Position, healthBack.Size=UDim2.fromOffset(5,0),UDim2.fromOffset(3,hh)
+            sampleFill.Position, sampleFill.Size=UDim2.fromScale(0,0.2),UDim2.fromScale(1,0.8)
+        end
+        sampleName.TextColor3,sampleDistance.TextColor3,samplePing.TextColor3,sampleTool.TextColor3,sampleTeam.TextColor3 = colorFor("name"),colorFor("distance"),colorFor("ping"),colorFor("tool"),colorFor("team")
+        sampleStroke.Color,sampleFill.BackgroundColor3 = colorFor("box"),options.healthGradient and Color3.fromRGB(60,205,95) or colorFor("health")
+        sampleHealthText.TextColor3,sampleHealthText.Visible=sampleFill.BackgroundColor3,options.health and options.healthNumber
+        if horizontal then sampleHealthText.Position=UDim2.fromOffset(hx+hw/2-20,hy-14) else sampleHealthText.Position=UDim2.fromOffset(hx-18,hy+hh*0.2-8) end
+        sampleName.Visible,sampleDistance.Visible,samplePing.Visible,sampleTool.Visible,sampleTeam.Visible,sampleHealth.Visible,sampleBox.Visible = options.names,options.distance,options.ping,options.tool,options.teamLabel,options.health,options.box
+        sampleStroke.Thickness=options.boxThickness
+        sampleHealthText.Text=options.healthFormat=="Current / max" and "80 / 100" or "80%"
+        sampleBox.BackgroundColor3,sampleBox.BackgroundTransparency=colorFor("box"),options.boxFill and 0.9 or 1
+        for _,item in ipairs({sampleName,sampleDistance,samplePing,sampleTool,sampleTeam}) do item.Font=Enum.Font[options.font]; item.TextStrokeTransparency=options.textOutline and 0.35 or 1 end
+        sampleName.TextSize,sampleDistance.TextSize,samplePing.TextSize,sampleTool.TextSize,sampleTeam.TextSize=options.textSize,options.textSize,options.textSize,options.textSize,options.textSize
+        sampleName.TextTransparency,sampleDistance.TextTransparency,samplePing.TextTransparency,sampleTool.TextTransparency,sampleTeam.TextTransparency,sampleStroke.Transparency = 1-options.opacity,1-options.opacity,1-options.opacity,1-options.opacity,1-options.opacity,1-options.opacity
+        for _,line in ipairs(previewBones) do line.Visible,line.BackgroundColor3,line.BackgroundTransparency = options.skeleton,colorFor("detail"),1-options.opacity; line.Size=UDim2.fromOffset(line.Size.X.Offset,options.lineThickness) end
+        previewTracer.Visible,previewTracer.BackgroundColor3,previewTracer.BackgroundTransparency = options.tracer,colorFor("detail"),1-options.opacity
+        previewTracer.Size=UDim2.fromOffset(previewTracer.Size.X.Offset,options.lineThickness)
+        for key,marker in pairs(markers) do
+            local isHealth=previewDrag and previewDrag.key=="health"
+            local target=isHealth and (previewDrag.candidate.."-2") or (previewDrag and previewDrag.candidate)
+            marker.Visible=previewDrag ~= nil and previewDrag.key ~= "window" and (not isHealth or key:sub(-2)=="-2")
+            marker.BackgroundColor3=target==key and Library.Theme["Accent"] or Color3.fromRGB(100,90,110)
+            marker.BackgroundTransparency=target==key and 0 or 0.65
+        end
+        previewAccent.BackgroundColor3=Library.Theme["Accent"]
+    end
+    local function dragHandle(handle,key)
+        connect(handle.InputBegan,function(input)
+            if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local previous=preview.Position
+            previewDrag={key=key,start=input.Position,input=input,candidate=layout[key],x=previous.X.Offset,y=previous.Y.Offset,sx=previous.X.Scale,sy=previous.Y.Scale}
+            syncPreview()
+        end)
+    end
+    dragHandle(previewHeader,"window"); dragHandle(sampleName,"name"); dragHandle(sampleDistance,"distance"); dragHandle(sampleHealth,"health"); dragHandle(samplePing,"ping"); dragHandle(sampleTool,"tool"); dragHandle(sampleTeam,"team")
+    local function nearestSide(pos,health)
+        local x,y=pos.X-preview.AbsolutePosition.X,pos.Y-preview.AbsolutePosition.Y
+        local bestKey,best=nil,math.huge
+        for _,side in ipairs({"top","bottom","left","right"}) do
+            for index=1,3 do
+                if not health or index==2 then
+                    local key=side.."-"..index
+                    local point=snapPoints[key]
+                    local distance=(x-point.x)^2+(y-point.y)^2
+                    if distance<best then bestKey,best=key,distance end
+                end
+            end
+        end
+        return health and bestKey:match("^(%a+)%-") or bestKey
+    end
+    connect(UserInputService.InputChanged,function(input)
+        if not previewDrag then return end
+        if input.UserInputType ~= Enum.UserInputType.MouseMovement and input ~= previewDrag.input then return end
+        if previewDrag.key == "window" then
+            local delta=input.Position-previewDrag.start
+            preview.Position=UDim2.new(previewDrag.sx,previewDrag.x+delta.X,previewDrag.sy,previewDrag.y+delta.Y)
+        else previewDrag.candidate=nearestSide(input.Position,previewDrag.key=="health") end
+        syncPreview()
+    end)
+    connect(UserInputService.InputEnded,function(input)
+        if previewDrag and (input == previewDrag.input or input.UserInputType == Enum.UserInputType.MouseButton1) then
+            if previewDrag.key ~= "window" then layout[previewDrag.key]=previewDrag.candidate end
+            previewDrag=nil; syncPreview()
+        end
+    end)
+    local entries = {}
+    local function destroyEntry(plr)
+        local e = entries[plr]
+        if e then e.screen:Destroy(); e.highlight:Destroy(); entries[plr] = nil end
+    end
+    local function clear()
+        for plr in pairs(entries) do destroyEntry(plr) end
+    end
+    local function newLine(owner, name, thickness)
+        local item = Instance.new("Frame")
+        item.Name, item.BorderSizePixel, item.AnchorPoint = name, 0, Vector2.new(0.5,0.5)
+        item.Size, item.Visible, item.Parent = UDim2.fromOffset(0,thickness), false, owner
+        return item
+    end
+    local bones = {
+        {"Head", "UpperTorso", nil, "Torso"}, {"UpperTorso", "LowerTorso", "Torso", "Torso"},
+        {"UpperTorso", "LeftUpperArm", "Torso", "Left Arm"}, {"LeftUpperArm", "LeftLowerArm", "Left Arm"}, {"LeftLowerArm", "LeftHand"},
+        {"UpperTorso", "RightUpperArm", "Torso", "Right Arm"}, {"RightUpperArm", "RightLowerArm", "Right Arm"}, {"RightLowerArm", "RightHand"},
+        {"LowerTorso", "LeftUpperLeg", "Torso", "Left Leg"}, {"LeftUpperLeg", "LeftLowerLeg", "Left Leg"}, {"LeftLowerLeg", "LeftFoot"},
+        {"LowerTorso", "RightUpperLeg", "Torso", "Right Leg"}, {"RightUpperLeg", "RightLowerLeg", "Right Leg"}, {"RightLowerLeg", "RightFoot"}
+    }
+    local function create(plr, character)
+        local screen = Instance.new("Frame")
+        screen.Name, screen.Size, screen.BackgroundTransparency, screen.BorderSizePixel = "PlayerESP", UDim2.fromScale(1,1), 1, 0
+        screen.Parent = gui
+        local box = Instance.new("Frame")
+        box.Name, box.BackgroundTransparency, box.BorderSizePixel, box.Parent = "Box", 1, 0, screen
+        local stroke = Instance.new("UIStroke"); stroke.Name, stroke.Thickness, stroke.Parent = "Outline", 1, box
+        local info = label(screen, "Info", "", UDim2.fromOffset(180, 18), UDim2.fromOffset(0,0), 13, options.color)
+        info.TextXAlignment, info.TextStrokeTransparency = Enum.TextXAlignment.Center, 0.35
+        local distance = label(screen, "Distance", "", UDim2.fromOffset(180,18), UDim2.fromOffset(0,0), 12, options.color)
+        distance.TextXAlignment, distance.TextStrokeTransparency = Enum.TextXAlignment.Center, 0.35
+        local tool = label(screen, "Tool", "", UDim2.fromOffset(180,18), UDim2.fromOffset(0,0), 12, options.color)
+        tool.TextXAlignment,tool.TextStrokeTransparency = Enum.TextXAlignment.Center,0.35
+        local team = label(screen, "Team", "", UDim2.fromOffset(180,18), UDim2.fromOffset(0,0), 12, options.color)
+        team.TextXAlignment,team.TextStrokeTransparency=Enum.TextXAlignment.Center,0.35
+        local ping = label(screen, "Ping", "", UDim2.fromOffset(180,18), UDim2.fromOffset(0,0), 12, options.color)
+        ping.TextXAlignment, ping.TextStrokeTransparency = Enum.TextXAlignment.Center, 0.35
+        local hpLabel = label(screen, "HealthNumber", "", UDim2.fromOffset(40,16), UDim2.fromOffset(0,0), 10, colors.health)
+        hpLabel.TextXAlignment, hpLabel.TextStrokeTransparency = Enum.TextXAlignment.Center, 0.35
+        local bar = frame(screen, "HealthBackground", UDim2.fromOffset(3,0), UDim2.fromOffset(0,0), Color3.fromRGB(16,14,20))
+        local fill = frame(bar, "HealthFill", UDim2.fromScale(1,1), UDim2.fromScale(0,0), options.color)
+        local tracer = newLine(screen, "Tracer", 1)
+        local skeleton = {}
+        local highlight = Instance.new("Highlight")
+        highlight.Name, highlight.Adornee, highlight.DepthMode = "PlayerHighlight", character, Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Parent = character
+        local e = {screen=screen, box=box, stroke=stroke, info=info, distance=distance, ping=ping, tool=tool, team=team, hpLabel=hpLabel, bar=bar, fill=fill, tracer=tracer, skeleton=skeleton, highlight=highlight, character=character}
+        entries[plr] = e
+        return e
+    end
+    local function segment(line, a, b, color)
+        local dx, dy = b.X-a.X, b.Y-a.Y
+        line.Position = UDim2.fromOffset((a.X+b.X)/2, (a.Y+b.Y)/2)
+        line.Size = UDim2.fromOffset(math.sqrt(dx*dx+dy*dy), options.lineThickness)
+        line.Rotation = math.deg((math.atan2 or math.atan)(dy,dx))
+        line.BackgroundColor3, line.BackgroundTransparency, line.Visible = color, 1-options.opacity, true
+    end
+    local function project(cam, pos)
+        local point, visible = cam:WorldToViewportPoint(pos)
+        return point, visible and point.Z > 0
+    end
+    -- Some games replicate their own ping in player attributes or leaderstats.
+    -- Values in those fields are conventionally milliseconds unless explicitly suffixed with "s".
+    local function gamePingValue(value)
+        local n
+        if type(value)=="number" then n=value
+        elseif type(value)=="string" then
+            local cleaned=value:lower():match("^%s*(.-)%s*$")
+            local amount,unit=cleaned:match("^(%d+%.?%d*)%s*(%a*)$")
+            if not amount or (unit~="" and unit~="ms" and unit~="s") then return nil end
+            n=tonumber(amount); if unit=="s" then n=n*1000 end
+        end
+        if type(n)=="number" and n==n and n>=0 and n<=60000 then return math.floor(n+0.5) end
+    end
+    local function readPlayerPing(plr)
+        local ok,value=pcall(function() return plr:GetNetworkPing() end)
+        if ok and type(value)=="number" and value==value and value>=0 and value<60 then return math.floor(value*1000+0.5),"network" end
+        for _,name in ipairs({"PingMs","Ping","ping"}) do
+            local success,reported=pcall(function() return plr:GetAttribute(name) end)
+            local parsed=success and gamePingValue(reported)
+            if parsed then return parsed,"game" end
+        end
+        local function fromContainer(container)
+            local success,children=pcall(function() return container:GetChildren() end)
+            if not success then return nil end
+            for _,item in ipairs(children) do
+                local key=item.Name:lower()
+                if (key=="ping" or key=="pingms") and (item:IsA("IntValue") or item:IsA("NumberValue") or item:IsA("StringValue")) then
+                    local parsed=gamePingValue(item.Value)
+                    if parsed then return parsed end
+                end
+            end
+        end
+        for _,name in ipairs({"leaderstats","Stats"}) do
+            local success,stats=pcall(function() return plr:FindFirstChild(name) end)
+            local parsed=success and stats and fromContainer(stats)
+            if parsed then return parsed,"game" end
+        end
+        local direct=fromContainer(plr)
+        if direct then return direct,"game" end
+        return nil,nil
+    end
+    local accumulated = 0
+    local function render(dt)
+        accumulated = accumulated + math.max(dt or 0,0)
+        if accumulated < 1/options.updateRate then return end
+        dt, accumulated = accumulated, 0
+        if preview.Visible then syncPreview() end
+        if not options.enabled and not (options.highlight and chams.standalone) then if next(entries) then clear() end; return end
+        local cam = workspace.CurrentCamera
+        if not cam then clear(); return end
+        local seen = {}
+        for _, plr in ipairs(Players:GetPlayers()) do
+            local c = plr.Character
+            local root = c and (c:FindFirstChild("HumanoidRootPart") or c:FindFirstChild("Torso") or c:FindFirstChild("UpperTorso") or c.PrimaryPart)
+            local hum = c and c:FindFirstChildOfClass("Humanoid")
+            local teammate = me and me.Team ~= nil and plr.Team == me.Team
+            if plr ~= me and root and root:IsA("BasePart") and hum and hum.Health > 0 then
+                local distance = (root.Position - cam.CFrame.Position).Magnitude
+                local chamsTeam,chamsRange=chams.teammates,chams.maxDistance
+                if chams.useEspFilters then chamsTeam,chamsRange=options.teammates,options.maxDistance end
+                local espAllowed=options.enabled and (options.teammates or not teammate) and distance<=options.maxDistance
+                local chamsAllowed=options.highlight and (options.enabled or chams.standalone) and (chamsTeam or not teammate) and distance<=chamsRange
+                if espAllowed or chamsAllowed then
+                    seen[plr] = true
+                    local e = entries[plr]
+                    if e and (e.character ~= c or e.root ~= root) then destroyEntry(plr); e = nil end
+                    if not e then e = create(plr,c); e.root=root end
+                    e.highlight.Enabled = chamsAllowed
+                    if chamsAllowed then
+                        e.highlight.DepthMode=options.throughWalls and Enum.HighlightDepthMode.AlwaysOnTop or Enum.HighlightDepthMode.Occluded
+                        e.highlight.FillColor,e.highlight.OutlineColor = chamsColors(plr,hum)
+                        e.highlight.FillTransparency,e.highlight.OutlineTransparency = chamsTransparency(distance,chamsRange)
+                    end
+                    local top,bottom,visible
+                    if espAllowed then
+                        local topVisible,bottomVisible
+                        top,topVisible = project(cam, root.Position + Vector3.new(0,3.2,0))
+                        bottom,bottomVisible = project(cam, root.Position - Vector3.new(0,3.2,0))
+                        visible=topVisible and bottomVisible
+                    else visible=false end
+                    e.screen.Visible = visible
+                    if visible then
+                        local height = math.max(8, math.abs(bottom.Y-top.Y))
+                        local width = height*0.55
+                        local x, y = (top.X+bottom.X)/2-width/2, math.min(top.Y,bottom.Y)
+                        local k = 1-math.exp(-math.max(dt or 0, 0)*options.followSpeed)
+                        if not e.x then e.x,e.y,e.w,e.h=x,y,width,height else
+                            e.x=e.x+(x-e.x)*k; e.y=e.y+(y-e.y)*k; e.w=e.w+(width-e.w)*k; e.h=e.h+(height-e.h)*k
+                        end
+                        e.box.Position, e.box.Size = UDim2.fromOffset(e.x,e.y), UDim2.fromOffset(e.w,e.h)
+                        e.box.Visible, e.stroke.Color = options.box, colorFor("box",plr)
+                        e.box.BackgroundColor3,e.box.BackgroundTransparency = colorFor("box",plr),options.boxFill and 0.9 or 1
+                        e.stroke.Transparency,e.stroke.Thickness = 1-options.opacity,options.boxThickness
+                        e.info.Text = options.nameMode == "Username" and plr.Name or (options.nameMode == "Both" and ((plr.DisplayName or plr.Name).." (@"..plr.Name..")") or (plr.DisplayName or plr.Name))
+                        e.info.TextColor3, e.info.TextSize = colorFor("name",plr), options.textSize
+                        e.info.TextTransparency, e.info.Visible = 1-options.opacity, options.names
+                        local nx,ny,na=textPosition("name",e.x,e.y,e.w,e.h,180)
+                        e.info.Position,e.info.TextXAlignment = UDim2.fromOffset(nx,ny),na
+                        e.distance.Text,e.distance.TextColor3,e.distance.TextSize = string.format("%.0f studs",distance),colorFor("distance",plr),options.textSize
+                        e.distance.TextTransparency,e.distance.Visible = 1-options.opacity,options.distance
+                        local dx,dy,da=textPosition("distance",e.x,e.y,e.w,e.h,180)
+                        e.distance.Position,e.distance.TextXAlignment=UDim2.fromOffset(dx,dy),da
+                        if options.ping and (not e.nextPing or os.clock() >= e.nextPing) then
+                            e.nextPing=os.clock()+2
+                            e.pingValue,e.pingSource=readPlayerPing(plr)
+                        end
+                        e.ping.Text = e.pingValue and ("ping "..(e.pingSource=="game" and "~" or "")..e.pingValue.." ms") or "ping N/A"
+                        e.ping.TextColor3,e.ping.TextSize,e.ping.TextTransparency,e.ping.Visible = colorFor("ping",plr),options.textSize,1-options.opacity,options.ping
+                        local px,py,pa=textPosition("ping",e.x,e.y,e.w,e.h,180)
+                        e.ping.Position,e.ping.TextXAlignment=UDim2.fromOffset(px,py),pa
+                        local equipped=c:FindFirstChildOfClass("Tool")
+                        e.tool.Text=equipped and equipped.Name or ""
+                        e.tool.Visible,e.tool.TextColor3,e.tool.TextSize,e.tool.TextTransparency=options.tool and equipped~=nil,colorFor("tool",plr),options.textSize,1-options.opacity
+                        local tx,ty,ta=textPosition("tool",e.x,e.y,e.w,e.h,180)
+                        e.tool.Position,e.tool.TextXAlignment=UDim2.fromOffset(tx,ty),ta
+                        local teamName=plr.Team and plr.Team.Name
+                        e.team.Text,e.team.Visible,e.team.TextColor3,e.team.TextSize,e.team.TextTransparency = teamName or "",options.teamLabel and teamName~=nil,colorFor("team",plr),options.textSize,1-options.opacity
+                        local qx,qy,qa=textPosition("team",e.x,e.y,e.w,e.h,180)
+                        e.team.Position,e.team.TextXAlignment=UDim2.fromOffset(qx,qy),qa
+                        for _,item in ipairs({e.info,e.distance,e.ping,e.tool,e.team}) do item.Font=Enum.Font[options.font]; item.TextStrokeTransparency=options.textOutline and 0.35 or 1 end
+                        local hp = math.clamp(hum.Health/math.max(hum.MaxHealth or 100,1),0,1)
+                        local hx,hy,hw,hh,horizontal=healthGeometry(e.x,e.y,e.w,e.h)
+                        e.bar.Visible,e.bar.Position,e.bar.Size = options.health,UDim2.fromOffset(hx,hy),UDim2.fromOffset(hw,hh)
+                        if horizontal then e.fill.Position,e.fill.Size=UDim2.fromScale(0,0),UDim2.fromScale(hp,1)
+                        else e.fill.Position,e.fill.Size=UDim2.fromScale(0,1-hp),UDim2.fromScale(1,hp) end
+                        e.fill.BackgroundTransparency = 1-options.opacity
+                        e.fill.BackgroundColor3 = options.healthGradient and Color3.fromRGB(math.floor(255*(1-hp)),math.floor(220*hp),95) or colorFor("health",plr)
+                        e.hpLabel.Text,e.hpLabel.TextColor3,e.hpLabel.Visible = options.healthFormat=="Current / max" and string.format("%.0f / %.0f",hum.Health,hum.MaxHealth or 100) or string.format("%.0f%%",hp*100),e.fill.BackgroundColor3,options.health and options.healthNumber
+                        if horizontal then e.hpLabel.Position=UDim2.fromOffset(hx+hw/2-20,hy-14) else e.hpLabel.Position=UDim2.fromOffset(hx-18,hy+hh*(1-hp)-8) end
+                        e.tracer.Visible = false
+                        if options.tracer then segment(e.tracer, {X=cam.ViewportSize.X/2,Y=options.tracerOrigin=="Top" and 0 or (options.tracerOrigin=="Center" and cam.ViewportSize.Y/2 or cam.ViewportSize.Y)}, {X=e.x+e.w/2,Y=e.y+e.h}, colorFor("detail",plr)) end
+                        if options.skeleton then
+                            local projected = {}
+                            local function bonePoint(part)
+                                if not projected[part] then local pt,ok=project(cam,part.Position); projected[part]={pt,ok} end
+                                return projected[part][1],projected[part][2]
+                            end
+                            for i, pair in ipairs(bones) do
+                                local line = e.skeleton[i]
+                                if not line then line=newLine(e.screen,"Bone"..i,1); e.skeleton[i]=line end
+                                line.Visible = false
+                                local a = c:FindFirstChild(pair[1]) or (pair[3] and c:FindFirstChild(pair[3]))
+                                local b = c:FindFirstChild(pair[2]) or (pair[4] and c:FindFirstChild(pair[4]))
+                                if a and b and a ~= b and a:IsA("BasePart") and b:IsA("BasePart") then
+                                    local pa,va=bonePoint(a); local pb,vb=bonePoint(b)
+                                    if va and vb then segment(line,pa,pb,colorFor("detail",plr)) end
+                                end
+                            end
+                        else
+                            for _,line in ipairs(e.skeleton) do line.Visible=false end
+                        end
+                    else e.x=nil end
+                end
+            end
+        end
+        for plr in pairs(entries) do if not seen[plr] then destroyEntry(plr) end end
+    end
+    connect(RunService.RenderStepped, render)
+    connect(Players.PlayerRemoving, destroyEntry)
+    local page = Window:Page({Name="ESP"})
+    local espTabs = page:MultiSection({Side=1,Height=420})
+    local main = espTabs:Section({Name="ESP"})
+    local chamsTab = espTabs:Section({Name="Chams"})
+    local style = espTabs:Section({Name="Settings"})
+    local previewControls = page:Section({Name="Preview",Side=2})
+    local masterToggle,boxToggle,namesToggle,distanceToggle,healthToggle,standaloneToggle
+    main:Button({Name="Quick ESP on",Callback=function()
+        boxToggle:Set(true); namesToggle:Set(true); distanceToggle:Set(true); healthToggle:Set(true); masterToggle:Set(true)
+    end})
+    main:Button({Name="Turn ESP off",Callback=function()
+        standaloneToggle:Set(false); masterToggle:Set(false)
+    end})
+    masterToggle=main:Toggle({Name="Player ESP",Flag="un_esp",Default=false,Callback=function(v) options.enabled=v; if not v and not (options.highlight and chams.standalone) then clear() end end})
+    boxToggle=main:Toggle({Name="Box",Flag="un_box",Default=true,Callback=function(v) options.box=v end})
+    namesToggle=main:Toggle({Name="Names",Flag="un_names",Default=true,Callback=function(v) options.names=v end})
+    distanceToggle=main:Toggle({Name="Distance",Flag="un_distance",Default=true,Callback=function(v) options.distance=v end})
+    main:Toggle({Name="Ping",Flag="un_ping",Default=false,Callback=function(v) options.ping=v end})
+    main:Toggle({Name="Equipped tool",Flag="un_tool",Default=false,Callback=function(v) options.tool=v end})
+    main:Toggle({Name="Team name",Flag="un_team_label",Default=false,Callback=function(v) options.teamLabel=v end})
+    healthToggle=main:Toggle({Name="Health bar",Flag="un_health",Default=true,Callback=function(v) options.health=v end})
+    main:Toggle({Name="Health percentage",Flag="un_health_number",Default=false,Callback=function(v) options.healthNumber=v end})
+    main:Toggle({Name="Skeleton",Flag="un_skeleton",Default=false,Callback=function(v) options.skeleton=v end})
+    main:Toggle({Name="Tracer",Flag="un_tracer",Default=false,Callback=function(v) options.tracer=v end})
+    PreviewStatus=previewControls:Label({Name="Preview: waiting"})
+    previewDropdown=previewControls:Dropdown({Name="Preview player",Flag="un_preview_player",Items=previewChoices(),Default="My avatar",Callback=selectPreview})
+    previewControls:Toggle({Name="ESP preview",Flag="un_preview",Default=false,Callback=function(v) preview.Visible=v; if v then refreshPreview(false) else previewDrag=nil end; syncPreview() end})
+    previewControls:Button({Name="Refresh preview avatar",Callback=function() refreshPreview(true) end})
+    previewControls:Slider({Name="Preview FOV",Flag="un_preview_fov",Min=20,Max=60,Default=32,Callback=function(v) viewCamera.FieldOfView=v end})
+    previewControls:Button({Name="Reset preview layout",Callback=function()
+        for key,side in pairs(defaults) do layout[key]=side end
+        syncPreview()
+    end})
+    chamsTab:Toggle({Name="Chams",Flag="un_highlight",Default=true,Callback=function(v) options.highlight=v; if not v and not options.enabled then clear() end end})
+    standaloneToggle=chamsTab:Toggle({Name="Chams without ESP",Flag="un_chams_alone",Default=false,Callback=function(v) chams.standalone=v; if not v and not options.enabled then clear() end end})
+    chamsTab:Toggle({Name="Use ESP filters",Flag="un_chams_use_esp_filters",Default=true,Callback=function(v) chams.useEspFilters=v end})
+    chamsTab:Toggle({Name="Include teammates",Flag="un_chams_teammates",Default=false,Callback=function(v) chams.teammates=v end})
+    chamsTab:Slider({Name="Chams distance",Flag="un_chams_range",Min=100,Max=5000,Default=2000,Callback=function(v) chams.maxDistance=v end})
+    chamsTab:Toggle({Name="Through walls",Flag="un_through_walls",Default=true,Callback=function(v) options.throughWalls=v end})
+    chamsTab:Toggle({Name="Fill",Flag="un_chams_fill",Default=true,Callback=function(v) chams.fill=v end})
+    chamsTab:Toggle({Name="Outline",Flag="un_chams_outline",Default=true,Callback=function(v) chams.outline=v end})
+    chamsTab:Dropdown({Name="Colour mode",Flag="un_chams_mode",Items={"ESP colour","Custom","Team","Health","Rainbow"},Default="ESP colour",Callback=function(v) chams.colorMode=v end})
+    chamsTab:Label({Name="Fill colour"}):Colorpicker({Flag="un_color_highlight",Default=colors.highlight,Callback=function(v) colors.highlight=v end})
+    chamsTab:Label({Name="Outline colour"}):Colorpicker({Flag="un_chams_outline_color",Default=chams.outlineColor,Callback=function(v) chams.outlineColor=v end})
+    chamsTab:Toggle({Name="Link ESP opacity",Flag="un_chams_link_opacity",Default=true,Callback=function(v) chams.linkOpacity=v end})
+    chamsTab:Slider({Name="Chams opacity",Flag="un_chams_opacity",Min=0,Max=1,Default=0.7,Decimals=0.05,Callback=function(v) chams.opacity=v end})
+    chamsTab:Slider({Name="Fill strength",Flag="un_highlight_fill",Min=0,Max=1,Default=0.45,Decimals=0.05,Callback=function(v) options.highlightFill=v end})
+    chamsTab:Slider({Name="Outline strength",Flag="un_chams_outline_strength",Min=0,Max=1,Default=1,Decimals=0.05,Callback=function(v) chams.outlineStrength=v end})
+    chamsTab:Toggle({Name="Pulse",Flag="un_pulse",Default=true,Callback=function(v) options.pulse=v end})
+    chamsTab:Toggle({Name="Pulse fill",Flag="un_chams_pulse_fill",Default=true,Callback=function(v) chams.pulseFill=v end})
+    chamsTab:Toggle({Name="Pulse outline",Flag="un_chams_pulse_outline",Default=true,Callback=function(v) chams.pulseOutline=v end})
+    chamsTab:Slider({Name="Pulse speed",Flag="un_chams_pulse_speed",Min=0.5,Max=8,Default=3,Decimals=0.1,Callback=function(v) chams.pulseSpeed=v end})
+    chamsTab:Slider({Name="Pulse depth",Flag="un_chams_pulse_depth",Min=0,Max=0.5,Default=0.12,Decimals=0.01,Callback=function(v) chams.pulseDepth=v end})
+    chamsTab:Slider({Name="Rainbow speed",Flag="un_chams_rainbow_speed",Min=0.02,Max=1,Default=0.12,Decimals=0.02,Callback=function(v) chams.rainbowSpeed=v end})
+    chamsTab:Toggle({Name="Offset rainbow outline",Flag="un_chams_rainbow_offset",Default=false,Callback=function(v) chams.rainbowOutlineOffset=v end})
+    chamsTab:Toggle({Name="Fade with distance",Flag="un_chams_distance_fade",Default=false,Callback=function(v) chams.distanceFade=v end})
+    chamsTab:Slider({Name="Minimum fade opacity",Flag="un_chams_fade_floor",Min=0,Max=1,Default=0.35,Decimals=0.05,Callback=function(v) chams.fadeFloor=v end})
+    style:Toggle({Name="Include teammates",Flag="un_team",Default=false,Callback=function(v) options.teammates=v end})
+    style:Toggle({Name="Rainbow",Flag="un_rainbow",Default=false,Callback=function(v) options.rainbow=v end})
+    style:Toggle({Name="Team colours",Flag="un_team_color",Default=false,Callback=function(v) options.teamColor=v end})
+    style:Toggle({Name="Health gradient",Flag="un_health_gradient",Default=true,Callback=function(v) options.healthGradient=v end})
+    style:Dropdown({Name="Name style",Flag="un_name_mode",Items={"Display name","Username","Both"},Default="Display name",Callback=function(v) options.nameMode=v end})
+    style:Dropdown({Name="Text font",Flag="un_font",Items={"Code","Gotham","GothamBold","SourceSans"},Default="Code",Callback=function(v) options.font=v end})
+    style:Dropdown({Name="Tracer origin",Flag="un_tracer_origin",Items={"Bottom","Center","Top"},Default="Bottom",Callback=function(v) options.tracerOrigin=v end})
+    style:Toggle({Name="Text outline",Flag="un_text_outline",Default=true,Callback=function(v) options.textOutline=v end})
+    style:Toggle({Name="Box fill",Flag="un_box_fill",Default=false,Callback=function(v) options.boxFill=v end})
+    style:Dropdown({Name="Health text format",Flag="un_health_format",Items={"Percent","Current / max"},Default="Percent",Callback=function(v) options.healthFormat=v end})
+    style:Slider({Name="Box thickness",Flag="un_box_thickness",Min=1,Max=4,Default=1,Callback=function(v) options.boxThickness=v end})
+    style:Slider({Name="Line thickness",Flag="un_line_thickness",Min=1,Max=4,Default=1,Callback=function(v) options.lineThickness=v end})
+    style:Slider({Name="Text gap",Flag="un_text_gap",Min=0,Max=20,Default=2,Callback=function(v) options.textGap=v end})
+    style:Slider({Name="Text size",Flag="un_text_size",Min=10,Max=18,Default=13,Callback=function(v) options.textSize=v end})
+    style:Slider({Name="ESP updates / sec",Flag="un_update_rate",Min=5,Max=60,Default=20,Callback=function(v) options.updateRate=math.clamp(v,5,60) end})
+    style:Slider({Name="Box follow speed",Flag="un_follow_speed",Min=4,Max=40,Default=14,Callback=function(v) options.followSpeed=v end})
+    style:Slider({Name="Max distance",Flag="un_range",Min=100,Max=5000,Default=2000,Callback=function(v) options.maxDistance=v end})
+    style:Slider({Name="Opacity",Flag="un_opacity",Min=0.1,Max=1,Default=0.7,Decimals=0.05,Callback=function(v) options.opacity=v end})
+    style:Label({Name="ESP colour"}):Colorpicker({Flag="un_color",Default=options.color,Callback=function(v)
+        options.color=v
+        for _,key in ipairs({"box","name","distance","ping","tool","team","detail","highlight"}) do colors[key]=v end
+    end})
+    local palette = style
+    for _,item in ipairs({{"Box","box"},{"Name","name"},{"Distance","distance"},{"Ping","ping"},{"Tool","tool"},{"Team","team"},{"Skeleton / tracer","detail"},{"Health","health"}}) do
+        local name,key=item[1],item[2]
+        palette:Label({Name=name.." colour"}):Colorpicker({Flag="un_color_"..key,Default=colors[key],Callback=function(v) colors[key]=v end})
+    end
+    return function() clear(); gui:Destroy() end
+end
+local stopUniversalEsp = installUniversalEsp()
+
+-- Restore each camera's own value when the override is disabled or replaced.
+local fovEnabled, fovValue, fovCamera, previousFov, appliedFov = false, 75, nil, nil, nil
+local function restoreFov()
+    if fovCamera and previousFov ~= nil then
+        pcall(function() if fovCamera.FieldOfView == appliedFov then fovCamera.FieldOfView = previousFov end end)
+    end
+    fovCamera, previousFov, appliedFov = nil, nil, nil
+end
+local function applyFov()
+    local camera = workspace.CurrentCamera
+    if not fovEnabled or not camera then restoreFov(); return end
+    if camera ~= fovCamera then
+        restoreFov(); fovCamera, previousFov = camera, camera.FieldOfView
+    end
+    appliedFov = fovValue
+    camera.FieldOfView = appliedFov
+end
+local cameraSettings = Visuals:Section({Name="Camera",Side=2})
+cameraSettings:Toggle({Name="Override field of view",Flag="un_fov_on",Default=false,Callback=function(v) fovEnabled=v; applyFov() end})
+cameraSettings:Slider({Name="Field of view",Flag="un_fov",Min=40,Max=120,Default=75,Callback=function(v) fovValue=v; applyFov() end})
+connect(RunService.RenderStepped, applyFov)
+
+Window:InitSettings()
+
+local function stop()
+    if not alive then return end
+    if liveDesired or liveRegistered then setLiveListening(false) end
+    alive = false
+    settings.world = false
+    stopUniversalEsp(); restoreFov()
+    clearMorph(); clearCharacterFx(); restoreWorld()
+    worldSky:Destroy(); worldAir:Destroy()
+    for _, connection in ipairs(connections) do connection:Disconnect() end
+    connections = {}
+    if skyPart then skyPart:Destroy(); skyPart = nil end
+    for _, effect in pairs(effects) do effect:Destroy() end
+end
+local function cleanup()
+    stop()
+    if env.Library == Library then pcall(function() Library:Exit() end) end
+    if env.SpotifyOverlayCleanup == cleanup then env.SpotifyOverlayCleanup = nil end
+end
+env.SpotifyOverlayCleanup = cleanup
+connect(Library.Holder.Instance.Destroying, stop)
+
+local function sendControl(action)
+    if controlPending then return end
+    if type(requestFn) ~= "function" or not data or not data.controls or not data.controls[action] then
+        controlMessage, controlMessageUntil = "Control unavailable", os.clock() + 3
+        return
+    end
+    controlPending = true
+    task.spawn(function()
+        local success, response = pcall(requestFn, {Url = "http://127.0.0.1:8787/control", Method = "POST",
+            Headers = {["Content-Type"] = "application/json"}, Body = HttpService:JSONEncode({action = action})})
+        if not alive then return end
+        local decoded, result = false, nil
+        if success and type(response) == "table" then
+            decoded, result = pcall(function() return HttpService:JSONDecode(response.Body or response.body) end)
+        end
+        controlMessage = decoded and result and (result.ok and "Command sent" or result.error) or "Control unavailable"
+        controlMessageUntil, controlPending = os.clock() + 3, false
+    end)
+end
+connect(playButton.MouseButton1Click, function() sendControl("play_pause") end)
+connect(nextButton.MouseButton1Click, function() sendControl("next") end)
+
+local function clock(ms)
+    local seconds = math.floor(math.max(0, tonumber(ms) or 0) / 1000)
+    return string.format("%d:%02d", math.floor(seconds / 60), seconds % 60)
+end
+local function lyricAt(lines, seconds)
+    local low, high, found = 1, #lines, 0
+    while low <= high do
+        local mid = math.floor((low + high) / 2)
+        if (tonumber(lines[mid].time) or 0) <= seconds then found, low = mid, mid + 1 else high = mid - 1 end
+    end
+    return found
+end
+-- Tagged words are absolute seconds; otherwise interpolate evenly within the current line.
+local function joinWords(words, last)
+    local result=""
+    for i=1,last do
+        local word=words[i]
+        if word and word~="" then
+            result=result .. ((result~="" and not word:match("^[%.,!?;:]")) and " " or "") .. word
+        end
+    end
+    return result
+end
+local function lyricWord(lines,index,seconds,duration,buildLine)
+    local line=lines[index]
+    if not line then return "","unavailable" end
+    local start=tonumber(line.time)
+    local following=lines[index+1] and tonumber(lines[index+1].time) or duration
+    if not start or not following or following<=start then return "","unavailable" end
+    local tagged=line.words
+    if type(tagged)=="table" and #tagged>0 then
+        local valid,previous,selected,values=true,start,0,{}
+        for _,entry in ipairs(tagged) do
+            local t=type(entry)=="table" and tonumber(entry.time) or nil
+            local value=type(entry)=="table" and entry.text or nil
+            if not t or t<previous or t>=following or type(value)~="string" or value=="" then valid=false; break end
+            previous=t
+            values[#values+1]=value
+            if t<=seconds then selected=#values end
+        end
+        if valid then return buildLine and joinWords(values,selected) or (values[selected] or ""),"tagged" end
+    end
+    local words={}
+    for word in tostring(line.text or ""):gmatch("%S+") do words[#words+1]=word end
+    if #words==0 then return "","unavailable" end
+    local fraction=math.clamp((seconds-start)/(following-start),0,1)
+    local selected=math.min(#words,math.floor(fraction*#words)+1)
+    return buildLine and joinWords(words,selected) or words[selected],"estimated"
+end
+local lastText = {}
+local function text(control, value)
+    if lastText[control] ~= value then control:SetText(value); lastText[control] = value end
+end
+local hudFade=0
+local function updateDisplay(now)
+    local song, artist, album, state, progress = "Waiting for Spotify", "—", "—", offline, "--:-- / --:--"
+    local line, following, actualLine, shownLyric, fraction, lyricKey = offline, "", "", "", 0, ""
+    local timing = settings.lyricMode~="Line" and "unavailable" or "off"
+    local playing = data and data.token_ok and data.source == "smtc" and data.playing
+    if data and not data.token_ok then
+        song, state, line = "Nothing playing", "Idle", "Waiting for a track"
+    elseif data and data.token_ok then
+        song, artist, album = data.song or "Unknown track", data.artist or "Unknown artist", data.album or ""
+        if album == "" then album = "—" end
+        state = data.source == "window" and "Detected (no timeline)" or (data.playing and "Playing" or "Paused")
+        local length = tonumber(data.duration_ms) or 0
+        if data.source == "smtc" and length > 0 then
+            local position = tonumber(data.progress_ms) or 0
+            if playing then position = position + math.max(0, now - receivedAt) * 1000 end
+            position = math.clamp(position, 0, length)
+            progress, fraction = clock(position) .. " / " .. clock(length), position / length
+            if type(data.lyrics) == "table" and #data.lyrics > 0 then
+                local index = lyricAt(data.lyrics, position / 1000 + settings.offset)
+                lyricKey = song .. "\0" .. artist .. "\0" .. tostring(index)
+                actualLine = index > 0 and (data.lyrics[index].text or "") or ""
+                line = actualLine ~= "" and actualLine or "Instrumental"
+                following = data.lyrics[index + 1] and data.lyrics[index + 1].text or ""
+                shownLyric=actualLine
+                if settings.lyricMode~="Line" and index>0 and actualLine~="" then
+                    local word
+                    word,timing=lyricWord(data.lyrics,index,position/1000+settings.offset,length/1000,settings.lyricMode=="Word line")
+                    shownLyric=timing=="unavailable" and actualLine or ((timing=="estimated" and "~" or "") .. (word~="" and word or "…"))
+                end
+            else
+                line = data.lyrics_status == "plain" and "Plain lyrics in menu (no timestamps)" or "Synced lyrics unavailable"
+            end
+        else
+            line = "Timeline unavailable"
+        end
+    end
+    if settings.liveListen then
+        local valid = liveData and now-liveReceivedAt<2.5 and currentTrackKey()~="" and liveTrackKey==currentTrackKey()
+        local status = valid and tostring(liveData.status or "listening") or liveStatus
+        timing, following, actualLine, shownLyric = "live: "..status.." (delayed)", "", "", ""
+        line = "Live: "..status
+        if valid and type(liveData.words)=="table" then
+            local words, selected = {}, 0
+            local elapsed = (tonumber(liveData.age_ms) or 0)/1000 + math.max(0,now-liveReceivedAt)
+            for _,entry in ipairs(liveData.words) do
+                local t=type(entry)=="table" and tonumber(entry.time) or nil
+                local value=type(entry)=="table" and entry.text or nil
+                if t and t>=0 and type(value)=="string" and value~="" then
+                    words[#words+1]=value
+                    if t<=elapsed then selected=#words end
+                end
+            end
+            if #words>0 then
+                actualLine=joinWords(words,#words)
+                if settings.lyricMode=="Line" then shownLyric=actualLine
+                elseif settings.lyricMode=="Word" then shownLyric=words[selected] or "…"
+                else shownLyric=selected>0 and joinWords(words,selected) or "…" end
+                line=shownLyric
+                lyricKey="live\0"..tostring(liveData.sequence or 0)
+            end
+        end
+    end
+    text(Song, "Track: " .. song); text(Artist, "Artist: " .. artist); text(Album, "Album: " .. album)
+    text(Status, "Status: " .. state .. (settings.waves and not spectrumAvailable and " • audio unavailable" or "")); text(Progress, "Progress: " .. progress)
+    text(Current, not settings.liveListen and data and data.lyrics_status == "plain" and data.lyrics_plain or line); text(Next, following ~= "" and ("Next: " .. following) or "")
+    text(LyricTiming, "Word timing: " .. timing)
+    title.Text, artistLabel.Text, timeLabel.Text = song, artist, progress
+    playButton.Text = playing and "PAUSE" or "PLAY"
+    local caps = data and data.controls or {}
+    playButton.TextColor3 = caps.play_pause and textColor or dim
+    nextButton.TextColor3 = caps.next and textColor or dim
+    progressFill.Size = UDim2.fromScale(fraction, 1)
+    local hudMessage = now < controlMessageUntil and controlMessage or
+        (settings.lyrics and actualLine ~= "" and ((settings.liveListen and "LIVE " or "")..shownLyric) or
+        (settings.liveListen and line or (not data and offline or (spectrumAvailable and state or state .. " • audio unavailable"))))
+    if hudStatus.Text~=hudMessage then
+        hudStatus.Text=hudMessage
+        if settings.lyricMode=="Word line" and actualLine~="" then hudFade=0.35 end
+    end
+    local newLine = settings.sky and settings.lyrics and shownLyric or ""
+    if newLine ~= "" and skyAnchorKey ~= lyricKey then
+        skyAnchorKey, skyOrigin = lyricKey, nil
+    end
+    if skyLine ~= newLine then
+        previousSkyLine, skyLine, skyTransition = skyLine, newLine, now
+        skyOld.Text, skyNew.Text = previousSkyLine, skyLine
+    end
+end
+local lastTextUpdate = 0
+connect(RunService.RenderStepped, function(dt)
+    local now = os.clock()
+    if now - lastTextUpdate >= 0.1 then lastTextUpdate = now; updateDisplay(now) end
+    hudStatus.TextTransparency=hudFade
+    hudFade=math.max(0,hudFade-math.min(dt,0.25)*2)
+    local accent = Library.Theme["Accent"]
+    accentLine.BackgroundColor3, progressFill.BackgroundColor3 = accent, accent
+    local active = data and data.token_ok and (data.source == "window" or (data.source == "smtc" and data.playing)) and spectrumAvailable and settings.waves
+    for i, bar in ipairs(bars) do
+        local target = active and math.clamp(((tonumber(spectrum[i]) or 0) * settings.gain) ^ 0.8, 0, 1) or 0
+        local rate = target > displayedBands[i] and 26 or 7
+        displayedBands[i] = displayedBands[i] + (target - displayedBands[i]) * (1 - math.exp(-math.min(dt, 0.25) * rate))
+        local height = 2 + math.floor(26 * displayedBands[i])
+        bar.Size, bar.Position = UDim2.fromOffset(5, height), UDim2.fromOffset((i - 1) * 7, 28 - height)
+        bar.BackgroundColor3, bar.BackgroundTransparency = accent, 0.85 - 0.7 * displayedBands[i]
+    end
+    local character = Players.LocalPlayer and Players.LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if morph.model then
+        if not enforceMorphParts() then return end
+        if morph.root ~= root or not root or not root.Parent then clearMorph()
+        else
+            if morph.poseDirty then
+                morph.pose=buildMorphPose(morph.model,morph.pose.root,character)
+                morph.poseDirty=false
+            end
+            if morph.pose then applyMorphPose(morph.pose,morphFrame(root)) end
+            for object, saved in pairs(morph.hidden) do
+                if object.Parent then pcall(function() object[saved.property] = 1 end) end
+            end
+        end
+    end
+    updateCharacterFx(character, root, accent)
+    if skyPart and root and settings.sky and settings.lyrics and (skyLine ~= "" or previousSkyLine ~= "") then
+        if not skyOrigin or skyRoot ~= root then
+            skyRoot, skyOrigin = root, root.Position
+            local look = root.CFrame.LookVector
+            local flat = Vector3.new(look.X, 0, look.Z)
+            skyDirection = flat.Magnitude > 0.01 and flat.Unit or Vector3.new(0, 0, -1)
+        end
+        skyPart.Position = skyOrigin + skyDirection * settings.skyDistance + Vector3.new(0, settings.skyHeight, 0)
+        skyGui.Enabled = true
+        local fade = settings.lyricMode~="Line" and math.min(settings.fade,0.12) or settings.fade
+        local alpha = math.clamp((now - skyTransition) / fade, 0, 1)
+        skyNew.TextTransparency = skyLine ~= "" and (1 - alpha) or 1
+        skyOld.TextTransparency = previousSkyLine ~= "" and alpha or 1
+        skyNew.TextStrokeTransparency = skyLine ~= "" and (1 - alpha * 0.7) or 1
+        skyOld.TextStrokeTransparency = previousSkyLine ~= "" and (0.3 + alpha * 0.7) or 1
+        skyNew.TextColor3, skyOld.TextColor3 = settings.skyColor, settings.skyColor
+        skyNew.TextSize, skyOld.TextSize = settings.skySize, settings.skySize
+        if alpha >= 1 then previousSkyLine = "" end
+    else
+        skyGui.Enabled = false
+    end
+end)
+
+task.spawn(function()
+    if type(requestFn) ~= "function" then offline = "Executor HTTP unavailable"; return end
+    while alive do
+        local success, response = pcall(requestFn, {Url = "http://127.0.0.1:8787/now-playing", Method = "GET"})
+        if not alive then break end
+        local code = success and type(response) == "table" and (response.StatusCode or response.status_code)
+        if success and type(response) == "table" and (not code or code == 200) then
+            local decoded, value = pcall(function() return HttpService:JSONDecode(response.Body or response.body) end)
+            if decoded and type(value) == "table" then data, receivedAt = value, os.clock()
+            else data, offline = nil, "Bridge response invalid" end
+        else data, offline = nil, "Bridge offline" end
+        task.wait(1)
+    end
+end)
+task.spawn(function()
+    if type(requestFn) ~= "function" then return end
+    while alive do
+        if settings.waves and settings.hud then
+            local success, response = pcall(requestFn, {Url = "http://127.0.0.1:8787/visualizer", Method = "GET"})
+            if not alive then break end
+            local code = success and type(response) == "table" and (response.StatusCode or response.status_code)
+            if success and type(response) == "table" and (not code or code == 200) then
+                local decoded, value = pcall(function() return HttpService:JSONDecode(response.Body or response.body) end)
+                if decoded and type(value) == "table" and value.available and type(value.bands) == "table" then
+                    spectrum, spectrumAvailable = value.bands, true
+                else spectrum, spectrumAvailable = {}, false end
+            else spectrum, spectrumAvailable = {}, false end
+        else spectrum, spectrumAvailable = {}, false end
+        task.wait(0.12)
+    end
+end)
+
+-- Executors load remote cover bytes through a local asset, rather than an HTTP ImageLabel URL.
+task.spawn(function()
+    local loaded, tried, nextAttempt = "", "", 0
+    local assetFn = getcustomasset or getsynasset
+    if type(requestFn) ~= "function" or type(assetFn) ~= "function" or type(writefile) ~= "function" then return end
+    local files = {}
+    while alive do
+        local path = data and data.album_art or ""
+        if path ~= loaded then artworkImage.Visible = false end
+        if path ~= "" and (path ~= tried or (path ~= loaded and os.clock() >= nextAttempt)) and path:match("^/album%-art%?key=%x+$") then
+            tried, nextAttempt = path, os.clock() + 30
+            local success, response = pcall(requestFn, {Url = "http://127.0.0.1:8787" .. path, Method = "GET"})
+            if not alive then break end
+            if success and type(response) == "table" and (response.StatusCode or response.status_code) == 200 then
+                local bytes = response.Body or response.body
+                local headers = response.Headers or response.headers or {}
+                local mime = headers["Content-Type"] or headers["content-type"] or "image/jpeg"
+                local name = "Vitality/Assets/gs-cover-" .. path:match("key=(%x+)") .. (mime:find("png", 1, true) and ".png" or ".jpg")
+                local saved, asset = pcall(function()
+                    assert(type(bytes) == "string" and #bytes <= 2000000)
+                    writefile(name, bytes); return assetFn(name)
+                end)
+                if saved and data and data.album_art == path and alive then
+                    artworkImage.Image, artworkImage.Visible, loaded = asset, true, path
+                    table.insert(files, name)
+                    if #files > 20 and type(delfile) == "function" then pcall(delfile, table.remove(files, 1)) end
+                end
+            end
+        elseif path == "" then tried, loaded = "", "" end
+        task.wait(1)
+    end
+end)
+
+-- Refreshing this lease keeps audio transcription enabled only while the client is alive.
+task.spawn(function()
+    while alive do
+        if liveDesired and liveRegistered and type(requestFn)=="function" then
+            local success,response=pcall(requestFn,{Url="http://127.0.0.1:8787/live-lyrics?client="..liveOwner,Method="GET"})
+            if not alive then break end
+            if liveDesired then
+                local code=success and type(response)=="table" and (response.StatusCode or response.status_code)
+                local decoded,value=false,nil
+                if success and type(response)=="table" and (not code or code==200) then
+                    decoded,value=pcall(function() return HttpService:JSONDecode(response.Body or response.body) end)
+                end
+                if decoded and type(value)=="table" and value.enabled then
+                    liveData,liveReceivedAt,liveTrackKey=value,os.clock(),currentTrackKey()
+                    liveStatus=tostring(value.status or "listening")
+                elseif decoded and type(value)=="table" and value.enabled==false then
+                    liveData,liveRegistered,liveStatus=nil,false,"starting"
+                    syncListener()
+                else
+                    liveData,liveStatus=nil,"live bridge unavailable"
+                end
+            end
+        elseif liveDesired and not liveRegistered and os.clock()>=liveRetryAt then
+            syncListener()
+        end
+        task.wait(0.5)
+    end
+end)
